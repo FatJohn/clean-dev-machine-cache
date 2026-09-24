@@ -44,6 +44,9 @@
 - `dart pub cache clean` 會連 `pub global` 裝的工具一起清掉，所以 `tier_b_pub_cache` 改用 `dart pub cache gc --force`，
   沒有 dart 或停用外部指令時退回路徑清理。gc 路徑刻意不清 `hosted-hashes`：gc 自己會刪掉被刪套件的 hash，
   若再清掉，保留下來的套件少了 hash，下次 `pub get` 會整包重新下載。
+- 擁有者判斷（`owner_running`）看的是整台機器的 process 命令列，測試會產生假 Xcode／dart／flutter_tools process。
+  同一台機器一次只跑一份 `mac/tests/run.sh`，跑的期間也別有其他命令列含這些字串的 process（包括等待迴圈的 `pgrep` pattern），
+  否則 t05／t07 等會互相干擾出假 FAIL。
 
 ## 完成定義（改到刪除邏輯時）
 
