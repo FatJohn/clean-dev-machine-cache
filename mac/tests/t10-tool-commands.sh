@@ -6,8 +6,10 @@
 #   - flutter_tools 在跑、或 PUB_CACHE=$HOME 時 dart 不會被呼叫
 #   - 沒設 FLUTTER_ROOT 時從 PATH 上的 flutter 找到沙盒裡的假 SDK，並清掉它的 bin/cache
 #   - ~/.npm 有不屬於目前使用者的檔案時，dry-run／apply／DISABLE_TOOL_COMMANDS=true 都印出 chown 提示，
-#     apply 照樣執行 npm cache clean；沒有時、或沒有 ~/.npm 時不印。沙盒建不出 root 擁有的檔案，
-#     所以用 OTHER_ID 目錄的假 id 回傳別的 uid／gid，讓沙盒裡的檔案全部被視為「不屬於目前使用者」
+#     apply 照樣執行 npm cache clean；沒有時、或沒有 ~/.npm 時不印。這幾個案例用 OTHER_ID 目錄的假 id
+#     回傳別的 uid／gid，讓沙盒裡的檔案全部被視為「不屬於目前使用者」
+#   - ~/.npm 本身屬於目前使用者、root 擁有的檔案藏在第 4 層時（真實 id，hard link 做出真的 root 擁有檔案），
+#     WARN 列出的是那個深層檔案，chown 指令用真實的 uid:gid
 #
 # 安全：PATH 只有「假工具目錄:系統工具 symlink 目錄:/bin」，不含 /usr/bin（/usr/bin/xcrun 是真的），
 # 也不含 Homebrew 等目錄；開跑前先斷言每個工具的 command -v 都解析到假工具目錄，不符就中止。
@@ -380,5 +382,45 @@ a_eq "$?" 0 "exit 0"
 a_nolog "$OUTFILE" "$NPM_HINT" "沒有 ~/.npm：不印 chown 提示"
 a_nolog "$OUTFILE" "No such file" "沒有 ~/.npm：沒有找不到檔案的錯誤"
 a_nolog "$OUTFILE" "[ERROR]" "沒有 ~/.npm：沒有 ERROR"
+
+echo "[~/.npm 屬於目前使用者，深層有 root 擁有的檔案：WARN 指向那個檔案]"
+# 真實情況是 ~/.npm 本身屬於使用者，root 擁有的 tarball 藏在 _cacache 深處。這個案例用真實的 id（不設 XPATH），
+# 用 hard link 在沙盒裡做出真的 root 擁有檔案：/private/etc/hosts 連到 ~/.npm/_cacache/index-v5/aa/root-entry
+# （第 4 層；find 只查起點或只往下一層都抓不到）。
+# 安全：這是 hard link，刪除只會移除連結這個名字；原檔擁有者是 root，本來就刪不到原檔。
+#   - 只跑 dry-run，不跑 --apply；script 本身也不刪 ~/.npm/_cacache（只交給 npm cache clean，而這裡的 npm 是假的）
+#   - 案例結束時明確 rm -f 連結（先過 sb_guard），不靠 sb_cleanup 的 rm -rf；中途中止時 EXIT trap 也先刪連結
+#   - ln 失敗（例如暫存目錄與 /private/etc 不在同一個 volume）時只略過這個案例，不算 FAIL
+ROOT_SRC="/private/etc/hosts"
+ROOT_LINK="$H/.npm/_cacache/index-v5/aa/root-entry"
+rm_root_link() {
+    sb_guard "$ROOT_LINK"
+    rm -f "$ROOT_LINK"
+}
+sb_guard "$H/.npm"
+rm -rf "${H:?}/.npm"
+mkdir -p "$H/.npm/_cacache/index-v5/aa" "$H/.npm/_cacache/content-v2"
+touch "$H/.npm/_cacache/content-v2/mine"
+sb_guard "$ROOT_LINK"
+trap 'rm_root_link; sb_cleanup' EXIT
+src_links=$(/usr/bin/stat -f %l "$ROOT_SRC" 2>/dev/null)
+if ! ln_err=$(/bin/ln "$ROOT_SRC" "$ROOT_LINK" 2>&1); then
+    skip "無法在沙盒裡 hard link ${ROOT_SRC}（${ln_err}），略過「~/.npm 深層有 root 擁有的檔案」案例"
+else
+    a_eq "$(/usr/bin/stat -f %Su "$ROOT_LINK")" root "hard link 的擁有者是 root"
+    a_eq "$(/usr/bin/stat -f %u "$H/.npm")" "$(id -u)" "沙盒的 ~/.npm 本身屬於目前使用者"
+    OUTFILE="$SB/npm-nested.txt"
+    run_tools --include-caches > "$OUTFILE" 2>&1
+    a_eq "$?" 0 "dry-run exit 0"
+    a_log "$OUTFILE" "[WARN] npm 的目錄 ~/.npm 底下有不屬於你的檔案（例如 ${ROOT_LINK}），通常是" "dry-run：WARN 的例子是深層的 root-entry"
+    a_nolog "$OUTFILE" "（例如 $H/.npm）" "dry-run：WARN 的例子不是 ~/.npm 本身"
+    a_nolog "$OUTFILE" "content-v2/mine" "dry-run：WARN 沒有列出屬於目前使用者的檔案"
+    a_logend "$OUTFILE" "請自己執行：sudo chown -R $(id -u):$(id -g) ~/.npm" "dry-run：chown 指令用真實的 uid:gid"
+    a_eq "$(calls | grep -c '^npm ')" 0 "dry-run：npm 沒被呼叫"
+fi
+rm_root_link
+trap sb_cleanup EXIT
+a_gone "$ROOT_LINK" "hard link 已移除"
+a_eq "$(/usr/bin/stat -f %l "$ROOT_SRC" 2>/dev/null)" "$src_links" "原檔 $ROOT_SRC 的連結數回到原值"
 
 finish
