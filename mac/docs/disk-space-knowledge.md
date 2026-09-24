@@ -146,6 +146,17 @@ $SDK/cmdline-tools/latest/bin/sdkmanager --uninstall "ndk;26.3.11579264"
 | bun cache | `~/.bun/install/cache` | 實測 12.5 MB | 下載快取 | 刪除 | 重新下載 | B |
 | `.next` 等框架產物 | `<專案>/.next` | 數百 MB | build 產物 | 刪除 | 重新 build | 不涵蓋 |
 
+### npm cache 裡有 root 擁有的檔案
+
+- **症狀**：`npm cache clean --force` 失敗，錯誤碼 `EACCES`、失敗的 syscall 是 `unlink`，npm 提示 cache 裡有
+  root-owned files。能刪的檔案照樣會被刪掉，只剩 root 擁有的那些（實例：`~/.npm` 原本 2.70 GiB；`--force` 在 root 擁有的檔案上失敗後，`~/.npm/_cacache` 只剩約 35 MiB，幾乎全是一個 root 擁有、約 34.7 MiB 的 tarball）。
+- **原因**：以前用 `sudo npm`（例如 `sudo npm install -g`）裝過東西，npm 以 root 身分把 tarball 與索引寫進家目錄的
+  `~/.npm/_cacache`。
+- **修法**：`sudo chown -R "$(id -u):$(id -g)" ~/.npm`，把 `~/.npm` 整個改回自己擁有，再清一次。
+  檢查還有沒有：`/usr/bin/find ~/.npm ! -user "$(id -un)" | head`。script 碰到這種情況會記 WARN、印出
+  這行指令（uid:gid 已展開），但不會自己呼叫 `sudo`。
+- **預防**：全域套件不要用 `sudo` 安裝；node 裝在家目錄（mise、nvm 這類版本管理工具）就不需要 `sudo`。
+
 ### Playwright
 
 `~/Library/Caches/ms-playwright` 底下是 `<瀏覽器>-<revision>`，每升級一次 Playwright 就多一組，

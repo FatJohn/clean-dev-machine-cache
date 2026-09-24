@@ -84,7 +84,7 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 
 | 項目 | 做法 | 量測路徑 | 擁有者 app |
 |---|---|---|---|
-| npm | `npm cache clean --force` | `~/.npm/_cacache` | — |
+| npm | `npm cache clean --force`；`~/.npm` 有不屬於你的檔案時先印 WARN 與 chown 提示（見表下說明） | `~/.npm/_cacache` | — |
 | pnpm | `pnpm store prune` | `pnpm store path` 的結果 | — |
 | npm log | 刪除 `~/.npm/_logs` | 同左 | — |
 | Yarn | 刪除 `~/Library/Caches/Yarn`（v1）與 `~/.yarn/berry/cache`（Berry） | 同左 | — |
@@ -104,6 +104,13 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 | Cursor 快取 | 清空 `~/Library/Caches/Cursor` | 同左 | Cursor |
 | Playwright | **只報告**，不清 | `~/Library/Caches/ms-playwright*` | — |
 
+- **npm**：以前用 `sudo npm`（例如 `sudo npm install -g`）裝過東西時，npm 會以 root 身分把檔案寫進
+  `~/.npm`，之後 `npm cache clean --force` 刪到它們就失敗（`EACCES`，npm 自己也會提示 cache 裡有
+  root-owned files），其餘檔案照樣刪掉。script 清 npm 前先找 `~/.npm` 底下第一個不屬於你的項目
+  （找到一個就停，`DISABLE_TOOL_COMMANDS=true` 時也照樣找），找到就記 WARN，附上那個路徑與可直接複製、
+  已展開 uid:gid 的修正指令（例如 `sudo chown -R 501:20 ~/.npm`），`npm cache clean --force` 照樣執行，
+  失敗時沿用一般的 ERROR 與 exit 1。script 本身不呼叫 `sudo`，chown 要自己跑。
+  預防：全域套件不要用 `sudo` 安裝；node 裝在家目錄（mise、nvm 這類版本管理工具）就不需要 `sudo`。
 - **pub cache** 有兩種做法：
   - 有 `dart` 且沒設 `DISABLE_TOOL_COMMANDS=true` 時跑 `dart pub cache gc --force`。它只刪沒被任何
     active root（`~/.pub-cache/active_roots` 記的、跑過 `pub get` 的專案與 `pub global` 工具）引用的套件，

@@ -5,9 +5,15 @@
 #     PUB_CACHE 指向沙盒，.tmp／_temp 刪除，hosted／git／hosted-hashes／bin／global_packages 保留
 #   - flutter_tools 在跑、或 PUB_CACHE=$HOME 時 dart 不會被呼叫
 #   - 沒設 FLUTTER_ROOT 時從 PATH 上的 flutter 找到沙盒裡的假 SDK，並清掉它的 bin/cache
+#   - ~/.npm 有不屬於目前使用者的檔案時，dry-run／apply／DISABLE_TOOL_COMMANDS=true 都印出 chown 提示，
+#     apply 照樣執行 npm cache clean；沒有時、或沒有 ~/.npm 時不印。這幾個案例用 OTHER_ID 目錄的假 id
+#     回傳別的 uid／gid，讓沙盒裡的檔案全部被視為「不屬於目前使用者」
+#   - ~/.npm 本身屬於目前使用者、root 擁有的檔案藏在第 4 層時（真實 id，hard link 做出真的 root 擁有檔案），
+#     WARN 列出的是那個深層檔案，chown 指令用真實的 uid:gid
 #
 # 安全：PATH 只有「假工具目錄:系統工具 symlink 目錄:/bin」，不含 /usr/bin（/usr/bin/xcrun 是真的），
 # 也不含 Homebrew 等目錄；開跑前先斷言每個工具的 command -v 都解析到假工具目錄，不符就中止。
+# run_tools 每次執行前再以最終 PATH（含 XPATH）重驗一次：每個工具與 id 都要解析到沙盒底下，XPATH 不能含冒號。
 # 假工具只把「程式名、參數、PUB_CACHE」記到 calls.log，不做任何事。
 # Flutter SDK 沒設 FLUTTER_ROOT，由 script 自己偵測；偵測候選含沙盒外的絕對路徑（/opt/flutter），所以：
 #   - 開頭：沙盒外的偵測候選（OUTSIDE_FLUTTER_CANDIDATES）只要存在就整支 SKIP，避免測試在偵測退化時碰到真實 SDK
@@ -102,13 +108,27 @@ mkpub() {
     touch "$1/hosted-hashes/pub.dev/a-1.0.0.sha256"
 }
 
-# run_tools [參數...]  選用環境：PC（PUB_CACHE）
+# run_tools [參數...]  選用環境：PC（PUB_CACHE）、XPATH（加在 PATH 最前面的單一沙盒目錄，不可含冒號）、
+#   DT（DISABLE_TOOL_COMMANDS，預設 false）
 #   帶 --apply 時，必須剛以相同參數與 PC 通過 preflight_flutter，否則中止
 PREFLIGHT_OK=""
 run_tools() {
     sb_guard "$H"
     [ -z "${PC:-}" ] || sb_guard "$PC"
-    local a
+    if [ -n "${XPATH:-}" ]; then
+        # XPATH 必須是單一目錄：帶冒號就能把 /usr/bin（真的 xcrun）或 Homebrew 夾帶進 PATH
+        case "$XPATH" in *:*) die "XPATH 不能含冒號（只能是單一沙盒目錄）：'$XPATH'" ;; esac
+        sb_guard "$XPATH"
+    fi
+    local a t got p="${XPATH:+$XPATH:}$TPATH"
+    # 最終 PATH 下，每個假工具與 id 都必須解析到沙盒底下，否則中止
+    for t in $TOOLS id; do
+        got=$(env -i PATH="$p" /bin/bash -c "command -v $t")
+        case "$got" in
+            "$SB/"*) ;;
+            *) die "PATH=$p 下 $t 解析到沙盒外（'$got'）" ;;
+        esac
+    done
     for a in "$@"; do
         if [ "$a" = --apply ]; then
             [ "$PREFLIGHT_OK" = "PC=${PC:-}|$*" ] || die "--apply 前沒有以相同參數跑 preflight_flutter：$*"
@@ -117,8 +137,8 @@ run_tools() {
     done
     reset_sdk
     : > "$CALLS"
-    local envs=(HOME="$H" PATH="$TPATH" CODE_SIGN_CLONE_BASE="$SB/X" CLAUDE_TMP_DIR="$SB/ct"
-        LOG_DIR="$SB/logs" DISABLE_TOOL_COMMANDS=false)
+    local envs=(HOME="$H" PATH="$p" CODE_SIGN_CLONE_BASE="$SB/X" CLAUDE_TMP_DIR="$SB/ct"
+        LOG_DIR="$SB/logs" DISABLE_TOOL_COMMANDS="${DT:-false}")
     [ -n "${PC:-}" ] && envs+=(PUB_CACHE="$PC")
     env -i "${envs[@]}" /bin/bash "$SCRIPT" "$@"
 }
@@ -169,6 +189,9 @@ pnpm store path
 go env GOCACHE
 go env GOMODCACHE"
 mkpub "$H/.pub-cache"
+mkdir -p "$H/.npm/_cacache/content-v2"
+touch "$H/.npm/_cacache/content-v2/blob"
+NPM_HINT="sudo chown -R"
 OUTFILE="$SB/dry.txt"
 run_tools --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "dry-run exit 0"
@@ -186,6 +209,7 @@ a_eq "$(calls)" "$DRY_ALLOWED" "dry-run 的呼叫與允許清單完全相符"
 a_eq "$(calls | grep -cE '(^| )(gc|prune|clean|delete|--clear|-cache|-modcache)( |$)')" 0 "dry-run 沒有 gc／prune／clean／delete 類呼叫"
 a_exists "$H/.pub-cache/_temp/d" "dry-run：pub _temp 還在"
 a_exists "$SDK/bin/cache/artifacts" "dry-run：假 SDK bin/cache 還在"
+a_nolog "$OUTFILE" "$NPM_HINT" "dry-run：~/.npm 全屬於目前使用者，不印 chown 提示"
 if [ "$FLUTTER_BUSY" = true ]; then
     skip "真實機器上 flutter_tools／Dart analysis server 在跑，dry-run 不會列出 dart pub cache gc"
 else
@@ -200,6 +224,7 @@ preflight_flutter "$FL_WANT" --apply --include-caches
 run_tools --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "apply exit 0"
 a_nolog "$OUTFILE" "command not found" "apply 沒有找不到的指令"
+a_nolog "$OUTFILE" "$NPM_HINT" "apply：~/.npm 全屬於目前使用者，不印 chown 提示"
 echo "  calls: $(calls | tr '\n' ';')"
 expect=""
 if [ "$XCODE_BUSY" = true ]; then
@@ -282,5 +307,120 @@ for pc in "$H" "$H/"; do
     a_exists "$H/_temp/d" "PUB_CACHE='$pc'：~/_temp 保留"
     a_exists "$H/hosted/h" "PUB_CACHE='$pc'：~/hosted 保留"
 done
+
+
+echo "[~/.npm 有不屬於目前使用者的檔案：印出 chown 提示]"
+# 假 id：-u／-g 回傳別的 uid／gid，其他參數交給真的 id。沙盒裡的檔案都屬於真實 uid，
+# 對 script 來說就全部「不屬於目前使用者」
+OTHER_ID="$SB/other-id"
+mkdir -p "$OTHER_ID"
+cat > "$OTHER_ID/id" <<'EOS'
+#!/bin/bash
+case "$*" in
+    -u) echo 424242 ;;
+    -g) echo 4343 ;;
+    *)  exec /usr/bin/id "$@" ;;
+esac
+EOS
+chmod +x "$OTHER_ID/id"
+a_eq "$(env -i PATH="$OTHER_ID:$TPATH" /bin/bash -c 'command -v id; id -u; id -g' | tr '\n' ' ')" "$OTHER_ID/id 424242 4343 " "假 id 在 PATH 最前面，回傳別的 uid／gid"
+[ "$(id -u)" != 424242 ] || die "真實 uid 剛好是 424242，假 id 無法模擬別的使用者"
+NPM_FIX="請自己執行：sudo chown -R 424242:4343 ~/.npm"
+NPM_DESC="npm cache；有不屬於你的檔案，見上方 WARN 的 chown 提示"
+rm -rf "${H:?}/.npm"
+mkdir -p "$H/.npm/_cacache/content-v2" "$H/.npm/_cacache/index-v5"
+touch "$H/.npm/_cacache/content-v2/blob" "$H/.npm/_cacache/index-v5/entry"
+
+OUTFILE="$SB/npm-dry.txt"
+XPATH="$OTHER_ID" run_tools --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 0 "dry-run exit 0"
+# 假 id 下 ~/.npm 裡每一項都不屬於目前使用者；find 最先檢查起點 ~/.npm 本身，所以只列一個時必定是它，
+# 與遍歷順序無關。-quit 失效時路徑後面會接換行與其他項目，WARN 就不再是「例如 ~/.npm），」
+a_log "$OUTFILE" "[WARN] npm 的目錄 ~/.npm 底下有不屬於你的檔案（例如 $H/.npm），通常是" "dry-run：WARN 只列出一個路徑（第一個不屬於目前使用者的 ~/.npm）"
+a_nolog "$OUTFILE" "content-v2/blob" "dry-run：WARN 沒有列出第二個檔案 content-v2/blob"
+a_nolog "$OUTFILE" "index-v5/entry" "dry-run：WARN 沒有列出第二個檔案 index-v5/entry"
+a_log "$OUTFILE" "通常是以前用 sudo 執行過 npm 留下的；不修的話 npm cache clean 會在這些檔案上失敗（EACCES）" "dry-run：WARN 說明原因與不修的後果"
+a_logend "$OUTFILE" "$NPM_FIX" "dry-run：chown 指令展開成實際的 uid:gid"
+a_log "$OUTFILE" "[DRY-RUN] 會執行 \`npm cache clean --force\` 清除 ${NPM_DESC}" "dry-run：仍列出 npm cache clean"
+a_count "$OUTFILE" "sudo" 1 "dry-run：sudo 只出現在提示裡一次"
+a_eq "$(calls | grep -c '^npm ')" 0 "dry-run：npm 沒被呼叫"
+
+OUTFILE="$SB/npm-apply.txt"
+XPATH="$OTHER_ID" preflight_flutter "$FL_WANT" --apply --include-caches
+XPATH="$OTHER_ID" run_tools --apply --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 0 "apply exit 0"
+a_logend "$OUTFILE" "$NPM_FIX" "apply：印出 chown 提示"
+a_eq "$(calls | grep -cxF 'npm cache clean --force')" 1 "apply：npm cache clean --force 照樣執行"
+a_log "$OUTFILE" "已執行 \`npm cache clean --force\`（${NPM_DESC}）" "apply：npm 的結果行帶上提示"
+
+echo "[~/.npm 有不屬於目前使用者的檔案，npm 失敗：ERROR 指向提示、exit 1]"
+FAIL_NPM="$SB/fail-npm"
+mkdir -p "$FAIL_NPM"
+cp "$OTHER_ID/id" "$FAIL_NPM/id"
+printf '#!/bin/bash\necho "npm error code EACCES" >&2\nexit 1\n' > "$FAIL_NPM/npm"
+chmod +x "$FAIL_NPM/npm"
+OUTFILE="$SB/npm-fail.txt"
+XPATH="$FAIL_NPM" preflight_flutter "$FL_WANT" --apply --include-caches
+XPATH="$FAIL_NPM" run_tools --apply --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 1 "npm 失敗：exit 1"
+a_logend "$OUTFILE" "$NPM_FIX" "npm 失敗：仍印出 chown 提示"
+a_log "$OUTFILE" "[ERROR] ✗ 指令失敗：\`npm cache clean --force\`（${NPM_DESC}）" "npm 失敗：ERROR 指向上方的 chown 提示"
+
+echo "[DISABLE_TOOL_COMMANDS=true：仍檢查並提示]"
+OUTFILE="$SB/npm-disabled.txt"
+DT=true XPATH="$OTHER_ID" run_tools --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 0 "exit 0"
+a_logend "$OUTFILE" "$NPM_FIX" "DISABLE_TOOL_COMMANDS=true：仍印出 chown 提示"
+a_log "$OUTFILE" "略過（DISABLE_TOOL_COMMANDS）：不執行 npm cache clean --force" "DISABLE_TOOL_COMMANDS=true：npm cache clean 不執行"
+a_eq "$(calls)" "" "DISABLE_TOOL_COMMANDS=true：沒有任何外部指令被呼叫"
+
+echo "[沒有 ~/.npm：不檢查、不報錯]"
+rm -rf "${H:?}/.npm"
+OUTFILE="$SB/npm-none.txt"
+XPATH="$OTHER_ID" run_tools --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 0 "exit 0"
+a_nolog "$OUTFILE" "$NPM_HINT" "沒有 ~/.npm：不印 chown 提示"
+a_nolog "$OUTFILE" "No such file" "沒有 ~/.npm：沒有找不到檔案的錯誤"
+a_nolog "$OUTFILE" "[ERROR]" "沒有 ~/.npm：沒有 ERROR"
+
+echo "[~/.npm 屬於目前使用者，深層有 root 擁有的檔案：WARN 指向那個檔案]"
+# 真實情況是 ~/.npm 本身屬於使用者，root 擁有的 tarball 藏在 _cacache 深處。這個案例用真實的 id（不設 XPATH），
+# 用 hard link 在沙盒裡做出真的 root 擁有檔案：/private/etc/hosts 連到 ~/.npm/_cacache/index-v5/aa/root-entry
+# （第 4 層；find 只查起點或只往下一層都抓不到）。
+# 安全：這是 hard link，刪除只會移除連結這個名字；原檔擁有者是 root，本來就刪不到原檔。
+#   - 只跑 dry-run，不跑 --apply；script 本身也不刪 ~/.npm/_cacache（只交給 npm cache clean，而這裡的 npm 是假的）
+#   - 案例結束時明確 rm -f 連結（先過 sb_guard），不靠 sb_cleanup 的 rm -rf；中途中止時 EXIT trap 也先刪連結
+#   - ln 失敗（例如暫存目錄與 /private/etc 不在同一個 volume）時只略過這個案例，不算 FAIL
+ROOT_SRC="/private/etc/hosts"
+ROOT_LINK="$H/.npm/_cacache/index-v5/aa/root-entry"
+rm_root_link() {
+    sb_guard "$ROOT_LINK"
+    rm -f "$ROOT_LINK"
+}
+sb_guard "$H/.npm"
+rm -rf "${H:?}/.npm"
+mkdir -p "$H/.npm/_cacache/index-v5/aa" "$H/.npm/_cacache/content-v2"
+touch "$H/.npm/_cacache/content-v2/mine"
+sb_guard "$ROOT_LINK"
+trap 'rm_root_link; sb_cleanup' EXIT
+src_links=$(/usr/bin/stat -f %l "$ROOT_SRC" 2>/dev/null)
+if ! ln_err=$(/bin/ln "$ROOT_SRC" "$ROOT_LINK" 2>&1); then
+    skip "無法在沙盒裡 hard link ${ROOT_SRC}（${ln_err}），略過「~/.npm 深層有 root 擁有的檔案」案例"
+else
+    a_eq "$(/usr/bin/stat -f %Su "$ROOT_LINK")" root "hard link 的擁有者是 root"
+    a_eq "$(/usr/bin/stat -f %u "$H/.npm")" "$(id -u)" "沙盒的 ~/.npm 本身屬於目前使用者"
+    OUTFILE="$SB/npm-nested.txt"
+    run_tools --include-caches > "$OUTFILE" 2>&1
+    a_eq "$?" 0 "dry-run exit 0"
+    a_log "$OUTFILE" "[WARN] npm 的目錄 ~/.npm 底下有不屬於你的檔案（例如 ${ROOT_LINK}），通常是" "dry-run：WARN 的例子是深層的 root-entry"
+    a_nolog "$OUTFILE" "（例如 $H/.npm）" "dry-run：WARN 的例子不是 ~/.npm 本身"
+    a_nolog "$OUTFILE" "content-v2/mine" "dry-run：WARN 沒有列出屬於目前使用者的檔案"
+    a_logend "$OUTFILE" "請自己執行：sudo chown -R $(id -u):$(id -g) ~/.npm" "dry-run：chown 指令用真實的 uid:gid"
+    a_eq "$(calls | grep -c '^npm ')" 0 "dry-run：npm 沒被呼叫"
+fi
+rm_root_link
+trap sb_cleanup EXIT
+a_gone "$ROOT_LINK" "hard link 已移除"
+a_eq "$(/usr/bin/stat -f %l "$ROOT_SRC" 2>/dev/null)" "$src_links" "原檔 $ROOT_SRC 的連結數回到原值"
 
 finish

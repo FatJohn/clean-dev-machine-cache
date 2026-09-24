@@ -646,9 +646,25 @@ run_tier_a() {
 # B 級：--include-caches，會重新下載
 # ============================================================
 
+# npm_foreign_owned  印出 ~/.npm 底下第一個不屬於目前使用者的項目（找到一個就停，不掃完整棵樹）；沒有就不印。
+#   以前用 sudo 跑過 npm（例如 sudo npm install -g）時，npm 會以 root 身分把檔案寫進 ~/.npm，
+#   之後 npm cache clean 刪到它們就 EACCES。只讀不改，不是外部清理指令，DISABLE_TOOL_COMMANDS 時照樣檢查。
+npm_foreign_owned() {
+    [ -d "${HOME}/.npm" ] || return 0
+    find "${HOME}/.npm" ! -user "$(id -u)" -print -quit 2>/dev/null
+}
+
 tier_b_packages() {
     if have npm; then
-        run_tool "npm cache" "${HOME}/.npm/_cacache" npm cache clean --force
+        # script 不呼叫 sudo：只提示使用者自己修，npm cache clean 照樣執行（其餘檔案仍清得掉）；
+        # 描述帶上提示，npm 失敗時的 ERROR 也看得到原因
+        local npm_foreign npm_desc="npm cache"
+        npm_foreign=$(npm_foreign_owned)
+        if [ -n "$npm_foreign" ]; then
+            log_warn "npm 的目錄 ~/.npm 底下有不屬於你的檔案（例如 ${npm_foreign}），通常是以前用 sudo 執行過 npm 留下的；不修的話 npm cache clean 會在這些檔案上失敗（EACCES）。請自己執行：sudo chown -R $(id -u):$(id -g) ~/.npm"
+            npm_desc="npm cache；有不屬於你的檔案，見上方 WARN 的 chown 提示"
+        fi
+        run_tool "$npm_desc" "${HOME}/.npm/_cacache" npm cache clean --force
     else
         log_skip "沒有 npm，略過 npm cache"
     fi
