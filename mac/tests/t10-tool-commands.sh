@@ -11,6 +11,7 @@
 #
 # 安全：PATH 只有「假工具目錄:系統工具 symlink 目錄:/bin」，不含 /usr/bin（/usr/bin/xcrun 是真的），
 # 也不含 Homebrew 等目錄；開跑前先斷言每個工具的 command -v 都解析到假工具目錄，不符就中止。
+# run_tools 每次執行前再以最終 PATH（含 XPATH）重驗一次：每個工具與 id 都要解析到沙盒底下，XPATH 不能含冒號。
 # 假工具只把「程式名、參數、PUB_CACHE」記到 calls.log，不做任何事。
 # Flutter SDK 沒設 FLUTTER_ROOT，由 script 自己偵測；偵測候選含沙盒外的絕對路徑（/opt/flutter），所以：
 #   - 開頭：沙盒外的偵測候選（OUTSIDE_FLUTTER_CANDIDATES）只要存在就整支 SKIP，避免測試在偵測退化時碰到真實 SDK
@@ -105,15 +106,27 @@ mkpub() {
     touch "$1/hosted-hashes/pub.dev/a-1.0.0.sha256"
 }
 
-# run_tools [參數...]  選用環境：PC（PUB_CACHE）、XPATH（加在 PATH 最前面的沙盒目錄）、
+# run_tools [參數...]  選用環境：PC（PUB_CACHE）、XPATH（加在 PATH 最前面的單一沙盒目錄，不可含冒號）、
 #   DT（DISABLE_TOOL_COMMANDS，預設 false）
 #   帶 --apply 時，必須剛以相同參數與 PC 通過 preflight_flutter，否則中止
 PREFLIGHT_OK=""
 run_tools() {
     sb_guard "$H"
     [ -z "${PC:-}" ] || sb_guard "$PC"
-    [ -z "${XPATH:-}" ] || sb_guard "$XPATH"
-    local a
+    if [ -n "${XPATH:-}" ]; then
+        # XPATH 必須是單一目錄：帶冒號就能把 /usr/bin（真的 xcrun）或 Homebrew 夾帶進 PATH
+        case "$XPATH" in *:*) die "XPATH 不能含冒號（只能是單一沙盒目錄）：'$XPATH'" ;; esac
+        sb_guard "$XPATH"
+    fi
+    local a t got p="${XPATH:+$XPATH:}$TPATH"
+    # 最終 PATH 下，每個假工具與 id 都必須解析到沙盒底下，否則中止
+    for t in $TOOLS id; do
+        got=$(env -i PATH="$p" /bin/bash -c "command -v $t")
+        case "$got" in
+            "$SB/"*) ;;
+            *) die "PATH=$p 下 $t 解析到沙盒外（'$got'）" ;;
+        esac
+    done
     for a in "$@"; do
         if [ "$a" = --apply ]; then
             [ "$PREFLIGHT_OK" = "PC=${PC:-}|$*" ] || die "--apply 前沒有以相同參數跑 preflight_flutter：$*"
@@ -122,7 +135,7 @@ run_tools() {
     done
     reset_sdk
     : > "$CALLS"
-    local envs=(HOME="$H" PATH="${XPATH:+$XPATH:}$TPATH" CODE_SIGN_CLONE_BASE="$SB/X" CLAUDE_TMP_DIR="$SB/ct"
+    local envs=(HOME="$H" PATH="$p" CODE_SIGN_CLONE_BASE="$SB/X" CLAUDE_TMP_DIR="$SB/ct"
         LOG_DIR="$SB/logs" DISABLE_TOOL_COMMANDS="${DT:-false}")
     [ -n "${PC:-}" ] && envs+=(PUB_CACHE="$PC")
     env -i "${envs[@]}" /bin/bash "$SCRIPT" "$@"
@@ -313,13 +326,17 @@ a_eq "$(env -i PATH="$OTHER_ID:$TPATH" /bin/bash -c 'command -v id; id -u; id -g
 NPM_FIX="請自己執行：sudo chown -R 424242:4343 ~/.npm"
 NPM_DESC="npm cache；有不屬於你的檔案，見上方 WARN 的 chown 提示"
 rm -rf "${H:?}/.npm"
-mkdir -p "$H/.npm/_cacache/content-v2"
-touch "$H/.npm/_cacache/content-v2/blob"
+mkdir -p "$H/.npm/_cacache/content-v2" "$H/.npm/_cacache/index-v5"
+touch "$H/.npm/_cacache/content-v2/blob" "$H/.npm/_cacache/index-v5/entry"
 
 OUTFILE="$SB/npm-dry.txt"
 XPATH="$OTHER_ID" run_tools --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "dry-run exit 0"
-a_log "$OUTFILE" "[WARN] npm 的目錄 ~/.npm 底下有不屬於你的檔案（例如 $H/.npm" "dry-run：WARN 列出第一個不屬於目前使用者的路徑"
+# 假 id 下 ~/.npm 裡每一項都不屬於目前使用者；find 最先檢查起點 ~/.npm 本身，所以只列一個時必定是它，
+# 與遍歷順序無關。-quit 失效時路徑後面會接換行與其他項目，WARN 就不再是「例如 ~/.npm），」
+a_log "$OUTFILE" "[WARN] npm 的目錄 ~/.npm 底下有不屬於你的檔案（例如 $H/.npm），通常是" "dry-run：WARN 只列出一個路徑（第一個不屬於目前使用者的 ~/.npm）"
+a_nolog "$OUTFILE" "content-v2/blob" "dry-run：WARN 沒有列出第二個檔案 content-v2/blob"
+a_nolog "$OUTFILE" "index-v5/entry" "dry-run：WARN 沒有列出第二個檔案 index-v5/entry"
 a_log "$OUTFILE" "通常是以前用 sudo 執行過 npm 留下的；不修的話 npm cache clean 會在這些檔案上失敗（EACCES）" "dry-run：WARN 說明原因與不修的後果"
 a_logend "$OUTFILE" "$NPM_FIX" "dry-run：chown 指令展開成實際的 uid:gid"
 a_log "$OUTFILE" "[DRY-RUN] 會執行 \`npm cache clean --force\` 清除 ${NPM_DESC}" "dry-run：仍列出 npm cache clean"
