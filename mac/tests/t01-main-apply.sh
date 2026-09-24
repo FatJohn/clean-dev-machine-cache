@@ -61,7 +61,7 @@ mkdir -p "$PR/linked"; touch "$PR/linked/package.json"; ln -s "$OUT/nm" "$PR/lin
 ( cd "$OUT" && find . | sort ) > "$SB/out-before.lst"
 
 OUTFILE="$SB/run.txt"
-FR="$FS" run_personal "$H" --apply --include-caches --projects "$PR" > "$OUTFILE" 2>&1
+FR="$FS" run_script "$H" --apply --include-caches --projects "$PR" > "$OUTFILE" 2>&1
 a_eq "$?" 0 "exit code 0"
 a_nolog "$OUTFILE" "[ERROR]" "沒有 ERROR"
 

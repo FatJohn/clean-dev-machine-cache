@@ -52,7 +52,7 @@ a_eq "$(pgrep -f 'flutter_''tools' | grep -c -x "$P3")" 1 "pgrep -f flutter_tool
 for mode in dry apply; do
     a=(); [ "$mode" = apply ] && a=(--apply)
     OUTFILE="$SB/$mode-busy.txt"
-    FR="$FS" run_personal "$H" ${a[@]+"${a[@]}"} --include-caches > "$OUTFILE" 2>&1
+    FR="$FS" run_script "$H" ${a[@]+"${a[@]}"} --include-caches > "$OUTFILE" 2>&1
     a_eq "$?" 0 "[$mode busy] exit 0"
     a_eq "$(state)" 111111111 "[$mode busy] ${ITEMS} 全部保留"
     a_log "$OUTFILE" "跳過 Xcode DerivedData：Xcode 正在執行" "[$mode busy] log：DerivedData 因 Xcode 跳過"
@@ -70,7 +70,7 @@ a_eq "$(pgrep -x Xcode | grep -c -x "$P1")" 0 "假 Xcode 已結束"
 
 echo "[假 process 結束後的對照組]"
 OUTFILE="$SB/apply-idle.txt"
-FR="$FS" run_personal "$H" --apply --include-caches > "$OUTFILE" 2>&1
+FR="$FS" run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "[apply idle] exit 0"
 a_cleaned gone "$H/Library/Developer/Xcode/DerivedData/p1" "Xcode DerivedData" xcode
 a_cleaned gone "$H/Library/Developer/Xcode/Products" "Xcode Products" xcode
@@ -97,7 +97,7 @@ bash -c 'exec -a "/sdk/bin/cache/dart-sdk/bin/dart language-server --protocol=ls
 BG_PIDS="$P4"
 sleep 1
 OUTFILE="$SB/apply-dart.txt"
-FR="$FS" run_personal "$H" --apply --include-caches > "$OUTFILE" 2>&1
+FR="$FS" run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "[apply dart-ls] exit 0"
 a_exists "$H/.pub-cache/hosted" "pub hosted 保留"
 a_exists "$H/.pub-cache/_temp" "pub _temp 保留"

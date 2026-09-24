@@ -20,9 +20,23 @@
 
 ## 快速開始
 
+以下指令都在 `mac/` 目錄執行。已經 clone 過（例如照根目錄 README 做過）的話，從 repo 根目錄 `cd mac` 就好，
+不要再 clone 一次，否則會在 repo 裡多出一份巢狀的副本：
+
+```bash
+cd mac                                                   # 從 repo 根目錄
+```
+
+還沒 clone 的話，先 clone 再進 `mac/`：
+
 ```bash
 git clone https://github.com/FatJohn/clean-dev-machine-cache.git
 cd clean-dev-machine-cache/mac
+```
+
+進到 `mac/` 之後：
+
+```bash
 ./clean-dev-mac.sh --include-caches                      # 先看 A + B 級會清什麼
 ./clean-dev-mac.sh --projects ~/Projects                 # 看 A + C 級
 ./clean-dev-mac.sh --apply --include-caches              # 確認沒問題再真的刪
@@ -45,6 +59,7 @@ log 寫在 `~/logs/clean-dev-mac/`（可用 `LOG_DIR` 覆寫），`--apply` 時�
 
 分析 [GrandPerspective](https://grandperspectiv.sourceforge.net/) 存下的掃描檔（File → Save Scan Data），
 印出目錄樹、最大檔案，以及 `node_modules`、`DerivedData`、`Caches` 等已知 pattern 的彙總，單位 GiB。
+以下指令在 `mac/` 目錄執行：
 
 ```bash
 tools/gpscan-summary.py scan.gpscan --depth 2 --min-size 5G
@@ -56,11 +71,14 @@ tools/gpscan-summary.py scan.gpscan --root ~/Library --depth 1
 ## 測試
 
 ```bash
-bash tests/run.sh       # 在 mac/ 底下跑；-v 印出每支測試的完整輸出
+bash tests/run.sh       # 在 mac/ 目錄執行；-v 印出每支測試的完整輸出
 ```
 
+`run.sh` 用自己的位置找測試，從 repo 根目錄跑 `bash mac/tests/run.sh` 也可以。
 每支測試都在 `mktemp -d` 建的沙盒裡用 `env -i` 執行，`HOME`、`LOG_DIR` 等路徑全部指到沙盒，
-並設 `DISABLE_TOOL_COMMANDS=true`，不碰真實家目錄。安全保證的細節寫在 `tests/lib.sh` 開頭。
+並設 `DISABLE_TOOL_COMMANDS=true`，不碰真實家目錄。例外是 `t10-tool-commands.sh`：它要檢查外部指令的呼叫參數，
+所以設 `DISABLE_TOOL_COMMANDS=false`，改讓 PATH 只含記錄呼叫的假工具（不含 `/usr/bin`），
+開跑前先確認每個工具都解析到假工具。安全保證的細節寫在 `tests/lib.sh` 開頭。
 擁有者 app 的判斷看的是整台機器的 process，所以測試時開著 Chrome／Edge 等，對應斷言會改成檢查「有跳過」。
 
 ## 相容性

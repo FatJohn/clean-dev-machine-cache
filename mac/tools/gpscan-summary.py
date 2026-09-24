@@ -10,7 +10,7 @@
 檔案可能解壓後近 1 GB、數百萬個 File，所以用 iterparse 串流解析並即時 clear()。
 只用 Python 標準函式庫。
 
-用法範例：
+用法範例（在 repo 的 mac/ 目錄執行）：
   tools/gpscan-summary.py scan.gpscan --depth 2 --min-size 5G
   tools/gpscan-summary.py scan.gpscan --root ~/Library --depth 1 --min-size 500M
 """

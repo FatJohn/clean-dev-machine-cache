@@ -9,7 +9,7 @@ H="$SB/h"; mkdir -p "$H"
 echo "[dry-run 不刪舊 log]"
 mkdir -p "$SB/logs"; touch "$SB/logs/clean-dev-mac-20250101-000000.log"; old "$SB/logs/clean-dev-mac-20250101-000000.log"
 OUTFILE="$SB/r.txt"
-run_personal "$H" > "$OUTFILE" 2>&1
+run_script "$H" > "$OUTFILE" 2>&1
 a_eq "$?" 0 "dry-run exit 0"
 a_exists "$SB/logs/clean-dev-mac-20250101-000000.log" "dry-run：舊 log 保留"
 a_log "$OUTFILE" "[DRY-RUN] 會刪除 1 個超過 30 天的本 script log" "log：只報告 1 個舊 log"
@@ -21,11 +21,11 @@ ago 25H "$P/25h/build"; ago 23H "$P/23h/build"
 mkdir -p "$P/d3p1h/node_modules" "$P/d2p23h/node_modules"; touch "$P/d3p1h/package.json" "$P/d2p23h/package.json"
 ago 73H "$P/d3p1h/node_modules"; ago 71H "$P/d2p23h/node_modules"
 OUTFILE="$SB/r1.txt"
-run_personal "$H" --apply --projects "$P/25h:$P/23h" --stale-days 1 > "$OUTFILE" 2>&1
+run_script "$H" --apply --projects "$P/25h:$P/23h" --stale-days 1 > "$OUTFILE" 2>&1
 a_gone "$P/25h/build" "--stale-days 1：25 小時前的 build 刪除"
 a_exists "$P/23h/build" "--stale-days 1：23 小時前的 build 保留"
 OUTFILE="$SB/r2.txt"
-run_personal "$H" --apply --projects "$P/d3p1h:$P/d2p23h" --stale-days 3 > "$OUTFILE" 2>&1
+run_script "$H" --apply --projects "$P/d3p1h:$P/d2p23h" --stale-days 3 > "$OUTFILE" 2>&1
 a_gone "$P/d3p1h/node_modules" "--stale-days 3：3 天又 1 小時的 node_modules 刪除"
 a_exists "$P/d2p23h/node_modules" "--stale-days 3：2 天 23 小時的 node_modules 保留"
 
@@ -35,7 +35,7 @@ ago 25H "$CR/codex-runtime-install-25h"; ago 23H "$CR/codex-runtime-install-23h"
 touch "$SB/logs/clean-dev-mac-49h.log" "$SB/logs/clean-dev-mac-47h.log" "$SB/logs/other-49h.log"
 ago 49H "$SB/logs/clean-dev-mac-49h.log" "$SB/logs/other-49h.log"; ago 47H "$SB/logs/clean-dev-mac-47h.log"
 OUTFILE="$SB/r3.txt"
-KLD=2 run_personal "$H" --apply > "$OUTFILE" 2>&1
+KLD=2 run_script "$H" --apply > "$OUTFILE" 2>&1
 a_eq "$?" 0 "KEEP_LOGS_DAYS=2 --apply exit 0"
 a_gone "$CT/s7p1" "Claude 暫存 7 天又 1 小時刪除"
 a_exists "$CT/s6p23" "Claude 暫存 6 天 23 小時保留"
@@ -49,7 +49,7 @@ a_gone "$SB/logs/clean-dev-mac-20250101-000000.log" "--apply：30 天以上的�
 echo "[KEEP_LOGS_DAYS 驗證]"
 for v in abc 0 07 -1; do
     OUTFILE="$SB/k.txt"
-    KLD="$v" run_personal "$H" > "$OUTFILE" 2>&1
+    KLD="$v" run_script "$H" > "$OUTFILE" 2>&1
     a_eq "$?" 2 "KEEP_LOGS_DAYS='${v}' → exit 2"
     a_log "$OUTFILE" "KEEP_LOGS_DAYS 必須是正整數" "KEEP_LOGS_DAYS='${v}' log"
 done

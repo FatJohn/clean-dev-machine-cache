@@ -499,28 +499,43 @@ codex_core() {
     printf '%s\n' "$1" | sed -E 's/-[A-Za-z0-9_]+-apple-darwin$//'
 }
 
-# codex_newest <releases 目錄>  印出要當成「最新」保留的版本目錄名
-#   去掉平台後綴後還有 - 的是預發行版（例如 0.10.0-alpha.1）。有穩定版時取最新的穩定版；
-#   完全沒有穩定版才取整體最新。不直接對全部 sort -V：它會把 0.10.0-alpha.1 排在 0.10.0 後面，
-#   結果穩定版被刪、alpha 被當成最新保留。
+# codex_kind <目錄名>  印出 stable、pre 或 unknown
+#   名稱＝版本＋可有可無的 -<arch>-apple-darwin 平台後綴。去掉後綴後：
+#     純數字版本（0.10.0）                                    → stable
+#     數字版本後接 -alpha／-beta／-rc／-pre／-dev 開頭的標記（0.10.0-alpha.1）→ pre
+#     其他（例如 0.3.0-linux 這種不認得的後綴）                 → unknown，一律保留，不參與「最新」的判斷
+codex_kind() {
+    local core; core=$(codex_core "$1")
+    if printf '%s\n' "$core" | grep -Eq '^[0-9]+(\.[0-9]+)*$'; then
+        echo stable
+    elif printf '%s\n' "$core" | grep -Eq '^[0-9]+(\.[0-9]+)*-(alpha|beta|rc|pre|dev)[0-9A-Za-z.-]*$'; then
+        echo pre
+    else
+        echo unknown
+    fi
+}
+
+# codex_newest <releases 目錄>  印出要當成「最新」保留的版本目錄名；沒有可辨識的版本就不印
+#   有穩定版時取最新的穩定版；完全沒有穩定版才取最新的預發行版。依去掉平台後綴後的版本排序（sort -V），
+#   不同架構的名稱也能互相比較。不把穩定版和預發行版混在一起 sort -V：它會把 0.10.0-alpha.1 排在
+#   0.10.0 後面，結果穩定版被刪、alpha 被當成最新保留。
 codex_newest() {
-    local all stable="" name
-    all=$(find "$1" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V)
+    local stable="" pre="" name
     while IFS= read -r name; do
         [ -n "$name" ] || continue
-        case "$(codex_core "$name")" in
-            *-*) ;;
-            *) stable="${stable}${name}
+        case "$(codex_kind "$name")" in
+            stable) stable="${stable}$(codex_core "$name")	${name}
+" ;;
+            pre)    pre="${pre}$(codex_core "$name")	${name}
 " ;;
         esac
     done <<EOF
-$all
+$(find "$1" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
 EOF
-    if [ -n "$stable" ]; then
-        printf '%s' "$stable" | sort -V | tail -n 1
-    else
-        printf '%s\n' "$all" | tail -n 1
-    fi
+    local pool="$stable"
+    [ -n "$pool" ] || pool="$pre"
+    [ -n "$pool" ] || return 0
+    printf '%s' "$pool" | sort -V | tail -n 1 | cut -f 2
 }
 
 tier_a_codex_releases() {
@@ -542,7 +557,7 @@ tier_a_codex_releases() {
 
     local newest
     newest=$(codex_newest "$releases")
-    log_info "Codex CLI：保留 current=${current}、最新=${newest}"
+    log_info "Codex CLI：保留 current=${current}、最新=${newest:-（沒有可辨識的版本）}"
 
     # 用 heredoc 而不是 pipe：pipe 會讓 while 跑在 subshell，TOTAL_FREED_KB 會遺失
     local name
@@ -550,6 +565,10 @@ tier_a_codex_releases() {
         [ -n "$name" ] || continue
         [ "$name" = "$current" ] && continue
         [ "$name" = "$newest" ] && continue
+        if [ "$(codex_kind "$name")" = unknown ]; then
+            log_info "Codex CLI：無法辨識版本名稱，保留 ${name}"
+            continue
+        fi
         clean purge "${releases}/${name}" "Codex CLI 舊版本 ${name}"
     done <<EOF
 $(find "$releases" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -V)

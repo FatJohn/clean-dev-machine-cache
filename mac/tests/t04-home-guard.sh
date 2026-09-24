@@ -13,7 +13,7 @@ snap() { ( cd "$SB" && find . ! -name '*.lst' ! -name 'r.txt' | sort ) > "$SB/$1
 for h in "" "/" "//" "/." "$SB/does-not-exist"; do
     snap b
     OUTFILE="$SB/r.txt"
-    run_personal "$h" --include-caches > "$OUTFILE" 2>&1
+    run_script "$h" --include-caches > "$OUTFILE" 2>&1
     a_eq "$?" 2 "HOME='${h}' → exit 2"
     snap a
     if cmp -s "$SB/b.lst" "$SB/a.lst"; then pass "HOME='${h}' 沙盒沒有任何變動（沒建 log 目錄）"; else fail "HOME='${h}' 沙盒有變動：$(diff "$SB/b.lst" "$SB/a.lst" | tr '\n' ' ')"; fi
@@ -24,7 +24,7 @@ done
 echo "[HOME 沒設]"
 OUTFILE="$SB/r.txt"
 env -i PATH="$SB/fakebin:/usr/bin:/bin" CODE_SIGN_CLONE_BASE="$SB/X" CLAUDE_TMP_DIR="$SB/ct" LOG_DIR="$SB/logs" \
-    DISABLE_TOOL_COMMANDS=true /bin/bash "$PERSONAL" > "$OUTFILE" 2>&1
+    DISABLE_TOOL_COMMANDS=true /bin/bash "$SCRIPT" > "$OUTFILE" 2>&1
 a_eq "$?" 2 "HOME 沒設 → exit 2"
 a_nolog "$OUTFILE" "unbound variable" "沒有 unbound variable"
 a_log "$OUTFILE" "HOME 是空的或是 /" "log：HOME 空"
@@ -37,7 +37,7 @@ case "$H" in
     /private/var/*) ALT_H="${H#/private}" ;;
 esac
 OUTFILE="$SB/unit.txt"
-env -i HOME="$H" PATH=/usr/bin:/bin ALT_H="$ALT_H" SB="$SB" /bin/bash -s "$PERSONAL" > "$OUTFILE" 2>&1 <<'EOS'
+env -i HOME="$H" PATH=/usr/bin:/bin ALT_H="$ALT_H" SB="$SB" /bin/bash -s "$SCRIPT" > "$OUTFILE" 2>&1 <<'EOS'
 eval "$(sed -n "/^norm_text()/,/^}/p;/^norm_phys()/,/^}/p;/^is_home_or_above()/,/^}/p;/^unsafe_path()/,/^}/p" "$1")"
 HOME_T=$(norm_text "$HOME"); HOME_P=$(norm_phys "$HOME")
 for p in "" / "$HOME" "$HOME/" // /. "$HOME/." "$HOME//" "$SB" "$ALT_H" "$HOME/Library"; do

@@ -6,7 +6,7 @@
 source "$(dirname "$0")/lib.sh"
 sb_init
 mkfakebin
-H="$SB/h"; sb_guard "$H"   # 這支直接呼叫 env -i（要加 bash -x），不經過 run_personal，所以自己檢查
+H="$SB/h"; sb_guard "$H"; sb_guard "$SB/p"   # 這支直接呼叫 env -i（要加 bash -x），不經過 run_script，所以自己檢查 HOME 與 --projects
 # PATH 上有假 flutter、HOME 預設位置有像 SDK 的目錄：DISABLE 模式下兩者都不該被採用
 mkflutter_sdk "$H/development/flutter"; mkdir -p "$H/development/flutter/bin/cache/c"
 mkflutter_sdk "$SB"; mkdir -p "$SB/bin/cache/c"
@@ -21,7 +21,7 @@ for mode in dry apply; do
     OUTFILE="$SB/$mode.txt"
     env -i HOME="$H" PATH="$SB/fakebin:/usr/bin:/bin" CODE_SIGN_CLONE_BASE="$SB/X" CLAUDE_TMP_DIR="$SB/ct" \
         LOG_DIR="$SB/logs" DISABLE_TOOL_COMMANDS=true \
-        /bin/bash -x "$PERSONAL" ${a[@]+"${a[@]}"} --include-caches --projects "$SB/p" > "$OUTFILE" 2> "$SB/$mode.trace"
+        /bin/bash -x "$SCRIPT" ${a[@]+"${a[@]}"} --include-caches --projects "$SB/p" > "$OUTFILE" 2> "$SB/$mode.trace"
     a_eq "$?" 0 "[$mode] exit 0"
     if [ -s "$SB/calls.log" ]; then fail "[$mode] 呼叫了外部工具：$(tr '\n' ';' < "$SB/calls.log")"; else pass "[$mode] 假工具沒有被呼叫"; fi
     n=$(grep -cE '^\++ (/usr/bin/)?(xcrun|brew|npm|pnpm|go|dotnet|dart|flutter)( |$)|^\++ env .*dart' "$SB/$mode.trace")

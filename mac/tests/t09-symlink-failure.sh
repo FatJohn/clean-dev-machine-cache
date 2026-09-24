@@ -11,7 +11,7 @@ mkdir -p "$SB/outside/dd/p1" "$SB/outside/ds/old" "$H/Library/Developer/Xcode"; 
 ln -s "$SB/outside/dd" "$H/Library/Developer/Xcode/DerivedData"
 ln -s "$SB/outside/ds" "$H/Library/Developer/Xcode/iOS DeviceSupport"
 OUTFILE="$SB/r.txt"
-run_personal "$H" --apply --include-caches > "$OUTFILE" 2>&1
+run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "exit 0"
 a_exists "$SB/outside/dd/p1" "symlink 指到的 DerivedData 內容保留"
 a_exists "$SB/outside/ds/old" "symlink 指到的 DeviceSupport 舊項目保留"
@@ -27,7 +27,7 @@ CT="$SB/claude tmp/proj"
 mkdir -p "$CT/oldsess/sub" "$CT/gone"; echo x > "$CT/oldsess/sub/locked"
 chflags uchg "$CT/oldsess/sub/locked"; old "$CT/oldsess/sub" "$CT/oldsess" "$CT/gone"
 OUTFILE="$SB/f1.txt"
-run_personal "$H" --apply > "$OUTFILE" 2>&1
+run_script "$H" --apply > "$OUTFILE" 2>&1
 a_eq "$?" 1 "exit 1"
 a_exists "$CT/oldsess/sub/locked" "鎖住的檔案還在"
 a_gone "$CT/gone" "同一輪其他舊 session 照樣刪除"
@@ -38,7 +38,7 @@ chflags -R nouchg "$CT/oldsess"; rm -rf "${CT:?}/oldsess"
 echo "[清除失敗：chmod 000 的子目錄]"
 mkdir -p "$CT/old2/sub"; echo y > "$CT/old2/sub/f"; chmod 000 "$CT/old2/sub"; old "$CT/old2"
 OUTFILE="$SB/f2.txt"
-run_personal "$H" --apply > "$OUTFILE" 2>&1
+run_script "$H" --apply > "$OUTFILE" 2>&1
 a_eq "$?" 1 "exit 1"
 a_exists "$CT/old2" "讀不到的子目錄所在 session 還在"
 a_log "$OUTFILE" "✗ 清除失敗（權限或檔案被佔用）：Claude Code 暫存 proj" "log：ERROR 清除失敗"

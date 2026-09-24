@@ -4,16 +4,20 @@
 # 安全保證（絕不碰真實 HOME）：
 #   1. 沙盒一律是 mktemp -d 產生的 cdmc-test.XXXXXX 目錄；sb_init 驗證名稱、存在，且不是真實 HOME
 #      本身或它的上層，否則中止。
-#   2. 一律用 env -i 執行（通常經過 run_personal；要加 bash -x 等情況直接寫 env -i，並自己
+#   2. 一律用 env -i 執行（通常經過 run_script；要加 bash -x 等情況直接寫 env -i，並自己
 #      呼叫 sb_guard）：HOME、LOG_DIR、CODE_SIGN_CLONE_BASE、CLAUDE_TMP_DIR 全部指到沙盒，
 #      DISABLE_TOOL_COMMANDS=true，PATH 只有沙盒的假工具目錄與 /usr/bin:/bin。
-#   3. 帶 --apply 時，HOME、FLUTTER_ROOT、PUB_CACHE 必須在沙盒底下，否則中止（sb_guard）。
+#      例外：t10-tool-commands.sh 要測外部指令的呼叫參數，設 DISABLE_TOOL_COMMANDS=false，
+#      改用只含假工具目錄、系統工具 symlink 目錄與 /bin 的 PATH（不含 /usr/bin，因為 /usr/bin/xcrun
+#      是真的），開跑前先斷言每個工具都解析到假工具目錄。
+#   3. 帶 --apply 時，HOME、FLUTTER_ROOT、PUB_CACHE 與每個 --projects 值（相對路徑以 cwd 解析）
+#      必須在沙盒底下，否則中止（sb_guard、sb_guard_projects）。
 #      沙盒外的 HOME（空字串、/ 等拒絕執行的案例）只准用 dry-run 跑。
 #   4. 結束時 trap 清掉整個沙盒（包含測試用的背景 process）。
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${TESTS_DIR}/.." && pwd)"
-PERSONAL="${REPO_DIR}/clean-dev-mac.sh"
+SCRIPT="${REPO_DIR}/clean-dev-mac.sh"
 
 PASSES=0
 FAILS=0
@@ -173,8 +177,32 @@ a_cleaned() {
 }
 
 # ---------- 執行 ----------
-# run_personal <HOME> [參數...]  選用環境：FR（FLUTTER_ROOT）、PC（PUB_CACHE）、KLD（KEEP_LOGS_DAYS）
-run_personal() {
+# sb_guard_projects [參數...]  每個 --projects 值（含冒號分隔的每一段）轉成絕對路徑後必須在沙盒底下，
+#   否則中止。相對路徑（包括字面上的 ~）以目前的 cwd 解析，與 clean-dev-mac.sh 的行為相同。
+sb_guard_projects() {
+    local want=false a d dirs cwd
+    cwd="$(pwd -P)"
+    [ "$cwd" != / ] || cwd=""
+    for a in "$@"; do
+        if [ "$want" = true ]; then
+            want=false
+            dirs=()
+            IFS=':' read -r -a dirs <<< "$a"
+            for d in ${dirs[@]+"${dirs[@]}"}; do
+                [ -n "$d" ] || continue
+                case "$d" in
+                    /*) sb_guard "$d" ;;
+                    *)  sb_guard "${cwd}/${d}" ;;
+                esac
+            done
+        elif [ "$a" = --projects ]; then
+            want=true
+        fi
+    done
+}
+
+# run_script <HOME> [參數...]  選用環境：FR（FLUTTER_ROOT）、PC（PUB_CACHE）、KLD（KEEP_LOGS_DAYS）
+run_script() {
     local home="$1" a apply=false
     shift
     for a in "$@"; do [ "$a" = --apply ] && apply=true; done
@@ -182,6 +210,7 @@ run_personal() {
         sb_guard "$home"
         [ -z "${FR:-}" ] || sb_guard "$FR"
         [ -z "${PC:-}" ] || sb_guard "$PC"
+        sb_guard_projects "$@"
     fi
     local envs=(HOME="$home" PATH="$SB/fakebin:/usr/bin:/bin"
         CODE_SIGN_CLONE_BASE="$SB/X" CLAUDE_TMP_DIR="$SB/claude tmp" LOG_DIR="$SB/logs"
@@ -189,5 +218,5 @@ run_personal() {
     [ -n "${FR:-}" ] && envs+=(FLUTTER_ROOT="$FR")
     [ -n "${PC:-}" ] && envs+=(PUB_CACHE="$PC")
     [ -n "${KLD:-}" ] && envs+=(KEEP_LOGS_DAYS="$KLD")
-    env -i "${envs[@]}" /bin/bash "$PERSONAL" "$@"
+    env -i "${envs[@]}" /bin/bash "$SCRIPT" "$@"
 }

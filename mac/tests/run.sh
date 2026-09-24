@@ -2,7 +2,8 @@
 # 依序跑 tests/t*.sh 與 tests/gpscan/t*.sh，印出每支的 PASS／FAIL／SKIP，最後總結；任一 FAIL 就 exit 1。
 # 每支測試都在自己的 mktemp -d 沙盒裡跑，不碰真實 HOME（保證怎麼做到見 tests/lib.sh 開頭）。
 #
-# 用法：tests/run.sh [-v]     -v 印出每支測試的完整輸出
+# 用法：在 mac/ 目錄執行 bash tests/run.sh [-v]（-v 印出每支測試的完整輸出）。
+# 測試位置由本檔位置決定，所以從 repo 根目錄或任何目錄執行 bash <repo>/mac/tests/run.sh 也可以。
 
 TESTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERBOSE=false

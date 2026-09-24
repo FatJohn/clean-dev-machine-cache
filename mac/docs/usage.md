@@ -7,6 +7,8 @@ log 寫在 `~/logs/clean-dev-mac/`。
 
 ## 用法
 
+以下指令在 `mac/` 目錄執行（在 repo 根目錄就把 `./clean-dev-mac.sh` 換成 `./mac/clean-dev-mac.sh`）：
+
 ```bash
 ./clean-dev-mac.sh                     # A 級，只報告
 ./clean-dev-mac.sh --include-caches    # A + B 級，只報告
@@ -54,7 +56,7 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
 | Xcode 應用程式快取 | `~/Library/Caches/com.apple.dt.Xcode` | 整個刪除 | Xcode |
 | 失效的模擬器 | — | `xcrun simctl delete unavailable` | Xcode、Simulator |
 | CoreSimulator logs | `~/Library/Logs/CoreSimulator` | 清空內容 | Xcode、Simulator |
-| Codex CLI 舊版本 | `~/.codex/packages/standalone/releases/*` | 保留 `current` 指到的版本與最新的穩定版（完全沒有穩定版時保留整體最新的一版），其餘刪除 | — |
+| Codex CLI 舊版本 | `~/.codex/packages/standalone/releases/*` | 保留 `current` 指到的版本與最新的穩定版（完全沒有穩定版時保留最新的預發行版）；無法辨識的名稱一律保留，其餘刪除 | — |
 | Claude Code 暫存 | `$CLAUDE_TMP_DIR/<專案>/<session>` | 每個專案目錄下超過 7 天的 session | — |
 | Homebrew | — | `brew cleanup --prune=all`（dry-run 用 `-n`） | — |
 | Codex runtime 安裝暫存 | `~/.cache/codex-runtimes/codex-runtime-install-*` | 超過 1 天的才刪 | — |
@@ -63,8 +65,11 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
   實測一台機器累積 10 份、共約 14 GiB。瀏覽器開著時裡面可能有正在使用的那份，所以瀏覽器在跑就跳過；
   要清就先完全結束 Chrome（⌘Q）。
 - **Codex CLI**：`current` symlink 解析不到時整項跳過，不刪任何版本。目錄名稱像
-  `0.156.0-aarch64-apple-darwin`，先去掉 `-<arch>-apple-darwin` 平台後綴，剩下的部分還有 `-` 就視為
-  預發行版（例如 `0.10.0-alpha.1`）。「最新」取最新的穩定版；完全沒有穩定版時才取整體最新（`sort -V`）。
+  `0.156.0-aarch64-apple-darwin`，先去掉 `-<arch>-apple-darwin` 平台後綴（沒有後綴的也可以）。剩下的是純數字版本
+  （例如 `0.10.0`）就是穩定版；數字版本後面接 `-alpha`、`-beta`、`-rc`、`-pre`、`-dev` 開頭的標記
+  （例如 `0.10.0-alpha.1`）是預發行版；其他名稱（例如後綴是 `-linux` 這種不認得的）一律保留，
+  並記「無法辨識版本名稱，保留」，也不參與「最新」的判斷。「最新」取最新的穩定版；完全沒有穩定版時才取最新的
+  預發行版（去掉平台後綴後以 `sort -V` 比較，所以不同架構的名稱也能互相比較）。
   `current` 永遠保留，所以 `current` 是預發行版時，它和最新的穩定版都會留下。
 - **Claude Code 暫存**的第一層是專案目錄、第二層才是各 session。script 只刪第二層超過 7 天沒動過的
   session，不直接刪整個專案目錄，以免連帶清掉還在跑的 session。判斷依據是 session 目錄本身的 mtime，
@@ -204,7 +209,7 @@ analysis server，而它就是從 `bin/cache/dart-sdk` 執行的，也會讀 pub
 
 ## 建議節奏
 
-- **每月一次**：先跑 dry-run 看清單，確認沒問題再加 `--apply`。
+- **每月一次**：先跑 dry-run 看清單，確認沒問題再加 `--apply`（在 `mac/` 目錄執行）。
 
   ```bash
   ./clean-dev-mac.sh --include-caches --projects ~/Projects
@@ -219,7 +224,8 @@ analysis server，而它就是從 `bin/cache/dart-sdk` 執行的，也會讀 pub
 
 本 repo 不提供安裝器，需要時自己建。以下範例只跑 A 級。
 
-launchd（每月 1 日 12:30；把路徑換成 clone 的位置，存成 `~/Library/LaunchAgents/local.clean-dev-mac.plist`）：
+launchd（每月 1 日 12:30；把 script 路徑換成 clone 的位置、`/Users/你的帳號` 換成自己的家目錄，
+存成 `~/Library/LaunchAgents/local.clean-dev-mac.plist`）：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -231,7 +237,7 @@ launchd（每月 1 日 12:30；把路徑換成 clone 的位置，存成 `~/Libra
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/你的帳號/Projects/clean-dev-machine-cache/clean-dev-mac.sh</string>
+        <string>/Users/你的帳號/Projects/clean-dev-machine-cache/mac/clean-dev-mac.sh</string>
         <string>--apply</string>
     </array>
     <key>StartCalendarInterval</key>
@@ -249,12 +255,17 @@ launchd（每月 1 日 12:30；把路徑換成 clone 的位置，存成 `~/Libra
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
     <key>StandardErrorPath</key>
-    <string>/tmp/clean-dev-mac.err</string>
+    <string>/Users/你的帳號/logs/clean-dev-mac/launchd.err</string>
 </dict>
 </plist>
 ```
 
+plist 裡一律寫完整路徑，不要寫 `~` 或 `$HOME`（`man launchd.plist` 沒有保證會展開）。script 自己會把 log 寫到
+`LOG_DIR`（預設 `~/logs/clean-dev-mac/`），`launchd.err` 只用來記錄 launchd 啟動 script 時的錯誤。
+手冊只說 `StandardErrorPath` 的檔案不存在時會建立，沒說會建立上層目錄，所以先 `mkdir -p ~/logs/clean-dev-mac`。
+
 ```bash
+mkdir -p ~/logs/clean-dev-mac
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/local.clean-dev-mac.plist
 launchctl bootout gui/$(id -u)/local.clean-dev-mac      # 移除
 ```
@@ -264,14 +275,19 @@ launchd 的 PATH 很短，沒設 `PATH` 的話 brew 等指令會找不到，對�
 crontab（`crontab -e`）：
 
 ```
-30 12 1 * * /bin/bash $HOME/Projects/clean-dev-machine-cache/clean-dev-mac.sh --apply >/dev/null 2>&1
+30 12 1 * * /bin/bash "$HOME/Projects/clean-dev-machine-cache/mac/clean-dev-mac.sh" --apply >> "$HOME/logs/clean-dev-mac/cron.log" 2>&1
 ```
+
+路徑換成 clone 的位置。script 自己會把 log 寫到 `LOG_DIR`（預設 `~/logs/clean-dev-mac/`）；`cron.log` 是用來記錄
+cron 本身的啟動錯誤（例如路徑打錯、檔案不存在），script 印到終端機的輸出也會一併附在這裡。
+`>>` 不會建立目錄，第一次排程前先 `mkdir -p ~/logs/clean-dev-mac`。
 
 ## 沙盒測試
 
 要驗證 `--apply` 的行為時，不要在真的家目錄上跑。code_sign_clone 與 Claude Code 暫存不在 HOME
 底下，外部指令也不看 HOME，所以三個變數都要一起設。`FLUTTER_ROOT`、`PUB_CACHE` 同樣不走 HOME，
-下面的 `env -i` 已經把它們清掉；要測 Flutter SDK 那一項就把 `FLUTTER_ROOT` 指到沙盒裡的假 SDK：
+下面的 `env -i` 已經把它們清掉；要測 Flutter SDK 那一項就把 `FLUTTER_ROOT` 指到沙盒裡的假 SDK。
+以下指令在 `mac/` 目錄執行：
 
 ```bash
 FAKE=/tmp/fakehome
