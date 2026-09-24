@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- tests/gpscan 用的手工 fixture。fixture.gpscan 是它的 gzip -n 版本（t-gpscan.sh 會檢查兩者一致）。
+     大小（GiB）：a.js 1、b.js 0.5（巢狀 node_modules）、app.bin 2、c.js 0.25、big.dat 3；總量 6.75。 -->
+<GrandPerspectiveScanDump appVersion="3.4.2" formatVersion="7">
+<ScanInfo volumePath="/" volumeSize="10737418240" freeSpace="2147483648" scanTime="2026-09-24T00:00:00Z" fileSizeMeasure="physical">
+<Folder name="">
+  <Folder name="Users">
+    <Folder name="me">
+      <Folder name="proj">
+        <Folder name="node_modules">
+          <File name="a.js" size="1073741824"/>
+          <Folder name="dep">
+            <Folder name="node_modules">
+              <File name="b.js" size="536870912"/>
+            </Folder>
+          </Folder>
+        </Folder>
+        <Folder name="build">
+          <File name="app.bin" size="2147483648"/>
+        </Folder>
+      </Folder>
+      <Folder name="web">
+        <Folder name="node_modules">
+          <File name="c.js" size="268435456"/>
+        </Folder>
+      </Folder>
+    </Folder>
+  </Folder>
+  <Folder name="Library">
+    <File name="big.dat" size="3221225472"/>
+  </Folder>
+</Folder>
+</ScanInfo>
+</GrandPerspectiveScanDump>
