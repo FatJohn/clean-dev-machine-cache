@@ -40,7 +40,7 @@
   （例如 `codex_newest` 累積版本清單的寫法），`mapfile` 改用 heredoc 餵 `while IFS= read -r`，
   `${var,,}` 改用 `tr '[:upper:]' '[:lower:]'`。
   `set -u` 下取用空陣列會報 unbound variable，展開要寫成 `${arr[@]+"${arr[@]}"}`。
-  逐行讀資料用 heredoc 而不是 pipe：pipe 讓 `while` 跑在 subshell，迴圈裡累加的 `TOTAL_FREED_KB` 會遺失。
+  迴圈要累加或改寫外層變數（如 `TOTAL_FREED_KB`）時，逐行讀資料用 heredoc 而不是 pipe：pipe 讓 `while` 跑在 subshell，改動會遺失。
 - `/usr/bin/xcrun` 在 `env -i PATH=/usr/bin:/bin` 下仍然解析得到真實工具，所以一般沙盒靠
   `DISABLE_TOOL_COMMANDS=true` 保護真實機器；檢查外部指令參數的 t10 改用不含 `/usr/bin` 的 PATH，
   開跑前確認每個工具都解析到假工具。
