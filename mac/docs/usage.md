@@ -165,7 +165,7 @@ DIR 是 `/`、`~`、`~` 的上層目錄（例如 `/Users`），或在 `~/Library
 ### 天數怎麼算
 
 所有「超過 N 天」都是指 mtime 早於「執行當下往前 N×24 小時」，用 `find -mmin +(N×1440)` 判斷。
-不用 `find -mtime +N`：實測 macOS 的 `-mtime +N` 要超過 N+1 天才命中（`-mtime +1` 只命中 49 小時以上），比字面多一天。
+不用 `find -mtime +N`：實測 macOS 的 `-mtime +N` 要超過 N+1 天才命中（`-mtime +1` 要超過 48 小時才命中），比字面多一天。
 適用於 `--stale-days`（最小 1）、`KEEP_LOGS_DAYS`（最小 1）、Claude Code 暫存的 7 天、Codex runtime 安裝暫存的
 1 天、iOS／watchOS DeviceSupport 的 90 天。例如 `--stale-days 1` 時，25 小時前的 `build/` 會清、
 23 小時前的不會。

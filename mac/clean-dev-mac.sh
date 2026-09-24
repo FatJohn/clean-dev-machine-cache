@@ -233,7 +233,7 @@ unsafe_path() {
 }
 
 # days_to_min <天數>  find -mmin 用的分鐘數。不用 -mtime：實測 BSD find 的 -mtime +N
-#   要超過 N+1 天才命中（-mtime +1 只命中 49 小時以上），與字面差一天。
+#   要超過 N+1 天才命中（-mtime +1 要超過 48 小時才命中），與字面差一天。
 #   -mmin +M 則是「超過 M 分鐘」，所以「超過 N 天」＝ -mmin +(N×1440)。
 days_to_min() {
     echo $(( $1 * 1440 ))
