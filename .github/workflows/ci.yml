@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # 每週跑一次：程式碼沒變時，macOS runner 映像更新也可能改變 find／pgrep／bash 的行為，
+  # 定期重跑才能在使用者遇到之前發現。
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Ensure shellcheck
+        run: |
+          set -euo pipefail
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+          shellcheck --version
+
+      - name: shellcheck
+        run: |
+          set -euo pipefail
+          git ls-files -z '*.sh' | xargs -0 shellcheck
+
+      - name: bash -n
+        run: |
+          set -euo pipefail
+          git ls-files -z '*.sh' | xargs -0 -n 1 bash -n
+
+      - name: Python syntax
+        run: |
+          set -euo pipefail
+          python3 -m py_compile mac/tools/gpscan-summary.py
+
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Environment
+        run: |
+          set -euo pipefail
+          sw_vers
+          /bin/bash --version
+          ls -d /opt/flutter 2>/dev/null || true
+
+      - name: Tests
+        run: |
+          set -euo pipefail
+          bash mac/tests/run.sh
