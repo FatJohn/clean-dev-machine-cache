@@ -9,9 +9,23 @@
 # 安全：PATH 只有「假工具目錄:系統工具 symlink 目錄:/bin」，不含 /usr/bin（/usr/bin/xcrun 是真的），
 # 也不含 Homebrew 等目錄；開跑前先斷言每個工具的 command -v 都解析到假工具目錄，不符就中止。
 # 假工具只把「程式名、參數、PUB_CACHE」記到 calls.log，不做任何事。
+# Flutter SDK 沒設 FLUTTER_ROOT，由 script 自己偵測；偵測候選含沙盒外的絕對路徑（/opt/flutter），所以：
+#   - 開頭：沙盒外的偵測候選（OUTSIDE_FLUTTER_CANDIDATES）只要存在就整支 SKIP，避免測試在偵測退化時碰到真實 SDK
+#   - 每次 --apply 前先用相同參數跑 dry-run（preflight_flutter），會清除的 Flutter SDK artifacts 不是
+#     $SDK/bin/cache、或 Flutter 相關輸出出現沙盒外路徑，就 die 中止整支測試；run_tools 沒有對應的
+#     preflight 就拒絕帶 --apply 執行
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 source "$(dirname "$0")/lib.sh"
 sb_init
+
+# clean-dev-mac.sh 的 detect_flutter_root 裡不在 HOME 底下的偵測候選（改 script 的候選清單時要同步）
+OUTSIDE_FLUTTER_CANDIDATES="/opt/flutter"
+for c in $OUTSIDE_FLUTTER_CANDIDATES; do
+    if [ -e "$c" ] || [ -L "$c" ]; then
+        skip "沙盒外的 Flutter SDK 偵測候選 $c 存在；避免測試在偵測退化時碰到真實 SDK，整支 t10 略過"
+        finish
+    fi
+done
 
 FAKE="$SB/tools"
 UTILS="$SB/utils"
@@ -73,11 +87,11 @@ for u in $SYS_UTILS; do
     case " $TOOLS " in *" $u "*) die "系統工具 $u 與假工具同名" ;; esac
 done
 
-# reset_sdk  每次執行前重建假 SDK 的 bin/cache。沒有 bin/cache 時 detect_flutter_root 會改找 HOME 底下與
-#   /opt/flutter 等預設位置，所以 bin/cache 不在就中止，不讓 script 往沙盒外找。
+# reset_sdk  每次執行前重建假 SDK 的 bin/cache（上一輪 apply 會把它刪掉）。沒有 bin/cache 時
+#   detect_flutter_root 會改找 HOME 底下與 /opt/flutter 等預設位置；沙盒外的防線是開頭的
+#   OUTSIDE_FLUTTER_CANDIDATES 檢查與 preflight_flutter，不是這裡。
 reset_sdk() {
     mkdir -p "$SDK/bin/cache/dart-sdk/bin" "$SDK/bin/cache/artifacts"
-    [ -d "$SDK/bin/cache" ] || die "假 SDK 的 bin/cache 不存在"
 }
 
 # mkpub <目錄>  完整的 pub cache 結構
@@ -89,15 +103,56 @@ mkpub() {
 }
 
 # run_tools [參數...]  選用環境：PC（PUB_CACHE）
+#   帶 --apply 時，必須剛以相同參數與 PC 通過 preflight_flutter，否則中止
+PREFLIGHT_OK=""
 run_tools() {
     sb_guard "$H"
     [ -z "${PC:-}" ] || sb_guard "$PC"
+    local a
+    for a in "$@"; do
+        if [ "$a" = --apply ]; then
+            [ "$PREFLIGHT_OK" = "PC=${PC:-}|$*" ] || die "--apply 前沒有以相同參數跑 preflight_flutter：$*"
+            PREFLIGHT_OK=""
+        fi
+    done
     reset_sdk
     : > "$CALLS"
     local envs=(HOME="$H" PATH="$TPATH" CODE_SIGN_CLONE_BASE="$SB/X" CLAUDE_TMP_DIR="$SB/ct"
         LOG_DIR="$SB/logs" DISABLE_TOOL_COMMANDS=false)
     [ -n "${PC:-}" ] && envs+=(PUB_CACHE="$PC")
     env -i "${envs[@]}" /bin/bash "$SCRIPT" "$@"
+}
+
+# preflight_flutter <sdk|none> [參數...]  用相同參數（去掉 --apply）先跑 dry-run，檢查 apply 會清的 Flutter SDK：
+#   sdk  會清除的 Flutter SDK artifacts 恰好一筆且是 $SDK/bin/cache
+#   none 不會清除任何 Flutter SDK artifacts（擁有者在跑等預期不偵測／跳過的情境）
+#   兩者都要求 Flutter 相關輸出行裡的絕對路徑全部在沙盒底下。不符就 die，中止整支測試。
+preflight_flutter() {
+    local want="$1" a out got outside
+    shift
+    local dargs=()
+    for a in "$@"; do [ "$a" = --apply ] || dargs+=("$a"); done
+    out="$SB/preflight.txt"
+    run_tools ${dargs[@]+"${dargs[@]}"} > "$out" 2>&1
+    got=$(grep -F '[DRY-RUN] 會清除 Flutter SDK artifacts' "$out" | sed 's/.* — //')
+    # Flutter 相關行裡每個絕對路徑的起點（行首或前一個字元不是路徑字元的 /）都必須接著 "$SB/"
+    outside=$(grep -iF flutter "$out" | LC_ALL=C awk -v sb="$SB/" '{
+        n = length($0)
+        for (i = 1; i <= n; i++) {
+            if (substr($0, i, 1) != "/") continue
+            p = (i == 1) ? "" : substr($0, i - 1, 1)
+            if (p ~ /[A-Za-z0-9._~\/-]/) continue
+            if (substr($0, i, length(sb)) != sb) { print; next }
+        }
+    }')
+    [ -z "$outside" ] || die "preflight：Flutter 相關輸出出現沙盒外路徑，中止（$*）：$outside"
+    case "$want" in
+        sdk)  [ "$got" = "$SDK/bin/cache" ] || die "preflight：會清除的 Flutter SDK artifacts 不是 $SDK/bin/cache，中止（$*）：'${got}'" ;;
+        none) [ -z "$got" ] || die "preflight：預期不清 Flutter SDK artifacts，實際會清，中止（$*）：'${got}'" ;;
+        *)    die "preflight_flutter：未知的預期 '$want'" ;;
+    esac
+    pass "preflight：dry-run 的 Flutter SDK 清除目標符合預期（${want}）"
+    PREFLIGHT_OK="PC=${PC:-}|$*"
 }
 
 # calls  印出 calls.log 的「程式 參數」（不含環境變數欄）
@@ -140,6 +195,8 @@ fi
 echo "[apply：每個外部指令的參數]"
 mkpub "$H/.pub-cache"
 OUTFILE="$SB/apply.txt"
+FL_WANT=sdk; [ "$FLUTTER_BUSY" = true ] && FL_WANT=none
+preflight_flutter "$FL_WANT" --apply --include-caches
 run_tools --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "apply exit 0"
 a_nolog "$OUTFILE" "command not found" "apply 沒有找不到的指令"
@@ -185,6 +242,7 @@ if [ "$FLUTTER_BUSY" != true ]; then
     echo "[apply：明確設定的 PUB_CACHE]"
     PCD="$SB/mypub"; mkpub "$PCD"
     OUTFILE="$SB/apply-pc.txt"
+    PC="$PCD" preflight_flutter sdk --apply --include-caches
     PC="$PCD" run_tools --apply --include-caches > "$OUTFILE" 2>&1
     a_eq "$?" 0 "exit 0"
     a_eq "$(dart_count)" 1 "dart 只呼叫一次"
@@ -202,6 +260,7 @@ until pgrep -f flutter_tools >/dev/null 2>&1 || [ "$n" -ge 50 ]; do sleep 0.1; n
 pgrep -f flutter_tools >/dev/null 2>&1 || die "假的 flutter_tools process 沒有起來"
 PCD="$SB/mypub"; mkpub "$PCD"
 OUTFILE="$SB/busy.txt"
+PC="$PCD" preflight_flutter none --apply --include-caches
 PC="$PCD" run_tools --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "exit 0"
 kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
@@ -214,6 +273,7 @@ echo "[PUB_CACHE=\$HOME：dart 不呼叫]"
 mkdir -p "$H/hosted/h" "$H/global_packages/g" "$H/.tmp/t" "$H/_temp/d"
 for pc in "$H" "$H/"; do
     OUTFILE="$SB/home.txt"
+    PC="$pc" preflight_flutter "$FL_WANT" --apply --include-caches
     PC="$pc" run_tools --apply --include-caches > "$OUTFILE" 2>&1
     a_eq "$?" 0 "PUB_CACHE='$pc'：exit 0"
     a_eq "$(dart_count)" 0 "PUB_CACHE='$pc'：dart 呼叫 0 次"
