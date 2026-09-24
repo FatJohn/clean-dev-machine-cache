@@ -500,15 +500,15 @@ codex_core() {
 }
 
 # codex_kind <目錄名>  印出 stable、pre 或 unknown
-#   名稱＝版本＋可有可無的 -<arch>-apple-darwin 平台後綴。去掉後綴後：
-#     純數字版本（0.10.0）                                    → stable
-#     數字版本後接 -alpha／-beta／-rc／-pre／-dev 開頭的標記（0.10.0-alpha.1）→ pre
-#     其他（例如 0.3.0-linux 這種不認得的後綴）                 → unknown，一律保留，不參與「最新」的判斷
+#   名稱＝版本＋可有可無的 -<arch>-apple-darwin 平台後綴。去掉後綴後，剩下的字串整串比對（不是只看開頭）：
+#     ^[0-9]+(\.[0-9]+)*$                                      → stable（0.10.0）
+#     ^[0-9]+(\.[0-9]+)*-(alpha|beta|rc|pre|dev)(\.?[0-9]+)*$  → pre（0.10.0-alpha.1、0.3.0-rc1、0.3.0-beta）
+#     其他（0.3.0-linux、0.3.0-devbuild、0.3.0-alpha.1-linux 等） → unknown，一律保留，不參與「最新」的判斷
 codex_kind() {
     local core; core=$(codex_core "$1")
     if printf '%s\n' "$core" | grep -Eq '^[0-9]+(\.[0-9]+)*$'; then
         echo stable
-    elif printf '%s\n' "$core" | grep -Eq '^[0-9]+(\.[0-9]+)*-(alpha|beta|rc|pre|dev)[0-9A-Za-z.-]*$'; then
+    elif printf '%s\n' "$core" | grep -Eq '^[0-9]+(\.[0-9]+)*-(alpha|beta|rc|pre|dev)(\.?[0-9]+)*$'; then
         echo pre
     else
         echo unknown

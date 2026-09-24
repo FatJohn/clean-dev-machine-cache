@@ -25,8 +25,14 @@ SKIPS=0
 SB=""
 BG_PIDS=""
 
+# 測試開始時的 stderr（run.sh 收集的 log）另存到 fd 3。die 寫到當下的 stderr；當下的 stderr 已被導到
+# 別處（例如 run_tools ... > "$OUTFILE" 2>&1 裡的 guard，OUTFILE 在沙盒裡、結束就刪）時再寫一份到 fd 3，
+# 讓 run.sh 的輸出仍看得到 ABORT 原因。
+exec 3>&2
+
 die() {
     echo "ABORT: $1" >&2
+    [ /dev/fd/2 -ef /dev/fd/3 ] || echo "ABORT: $1" >&3
     exit 99
 }
 

@@ -222,7 +222,7 @@ script 不涵蓋：volume 裡可能有資料，一定要先看過 `docker system
 | Claude desktop Cache | `~/Library/Application Support/Claude/Cache` | 實例 1.17 | app 快取 | 結束 app 後刪除 | 無 | 不涵蓋 |
 | Claude Code 暫存 | `/private/tmp/claude-<UID>` | 實例 4.60 | 各 session 的暫存與 scratchpad | 刪除超過一週的 session 目錄 | 無法回頭看舊 session 的暫存檔 | A（7 天） |
 | Claude Code 對話紀錄 | `~/.claude/projects` | 實例 2.41 | 各專案的 session transcript | 刪除舊的 `.jsonl`；或在 settings 設 `cleanupPeriodDays` 讓它自動清 | 無法 resume 舊 session | 不涵蓋 |
-| Codex CLI 舊版本 | `~/.codex/packages/standalone/releases` | 每版約 270 MB（實例 24 版 6.45） | 自動更新留下的各版本 | 保留 `current` 指向的版本、最新的穩定版與無法辨識的名稱，其餘刪除 | 無 | A |
+| Codex CLI 舊版本 | `~/.codex/packages/standalone/releases` | 每版約 270 MB（實例 24 版 6.45） | 自動更新留下的各版本 | 保留 `current` 指向的版本、最新的穩定版與無法辨識的名稱（去掉平台後綴後，整串不符穩定版或預發行版格式的），其餘刪除 | 無 | A |
 | Codex runtime | `~/.cache/codex-runtimes` | 實例 3.53 | runtime 與安裝暫存 | 刪除 `codex-runtime-install-*` | 無 | A（1 天） |
 | 編輯器 extensions | `~/.vscode/extensions`、`~/.cursor/extensions`、`~/.windsurf/extensions` | 數百 MB 到數 GB | 各 extension，更新後舊版目錄可能殘留 | 同一 extension 有多個版本目錄時，刪掉舊的 | 無 | 不涵蓋 |
 | Cursor 快取 | `~/Library/Caches/Cursor` | 實例 1.83 | app 快取 | 清空 | 無 | B |

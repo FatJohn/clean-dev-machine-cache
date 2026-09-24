@@ -1,7 +1,8 @@
 #!/bin/bash
 # Codex CLI 舊版本：保留 current 與「最新」。最新＝最新的穩定版；完全沒有穩定版才取整體最新。
-# 目錄名稱可能帶 -<arch>-apple-darwin 平台後綴；去掉後是純數字版本才是穩定版，接 -alpha／-beta／-rc／-pre／-dev
-# 開頭的是預發行版，其他（不認得的後綴，例如 -linux）一律保留並記 log。
+# 目錄名稱可能帶 -<arch>-apple-darwin 平台後綴；去掉後整串比對：純數字版本是穩定版，數字版本接
+# -alpha／-beta／-rc／-pre／-dev 再接可有可無的數字段（.1、1）是預發行版，其他（例如 -linux、-devbuild、
+# -alpha.1-linux）一律保留並記 log。
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 source "$(dirname "$0")/lib.sh"
 sb_init
@@ -75,6 +76,17 @@ KEEP_NEWEST=0.3.0-aarch64-apple-darwin UNKNOWN="0.4.0-linux 0.5.0-aarch64-foo 0.
     "0.2.0-aarch64-apple-darwin 0.3.0-aarch64-apple-darwin 0.4.0-linux 0.5.0-aarch64-foo 0.6.0-weird-apple-darwin-x nightly" \
     0.1.0-aarch64-apple-darwin 0.2.0-aarch64-apple-darwin 0.3.0-aarch64-apple-darwin 0.4.0-linux \
     0.5.0-aarch64-foo 0.6.0-weird-apple-darwin-x nightly 0.3.0-beta.1-aarch64-apple-darwin
+
+# 整串比對，不是只看開頭：-devbuild、-alpha.1-linux 不是預發行版（保留）；-rc1、-alpha.1-<arch>-apple-darwin、
+# -beta-<arch>-apple-darwin 是預發行版（不是最新就刪）
+KEEP_NEWEST=0.2.0 UNKNOWN="0.3.0-devbuild 0.3.0-alpha.1-linux" codex_case strict-whole-name 0.1.0 \
+    "0.1.0 0.2.0 0.3.0-alpha.1-linux 0.3.0-devbuild" \
+    0.1.0 0.2.0 0.3.0-devbuild 0.3.0-alpha.1-linux 0.3.0-rc1 \
+    0.3.0-alpha.1-aarch64-apple-darwin 0.3.0-beta-x86_64-apple-darwin
+KEEP_NEWEST=0.3.0-rc1 UNKNOWN=0.3.0-devbuild codex_case strict-pre-only 0.3.0-beta-x86_64-apple-darwin \
+    "0.3.0-beta-x86_64-apple-darwin 0.3.0-devbuild 0.3.0-rc1" \
+    0.3.0-beta-x86_64-apple-darwin 0.3.0-rc1 0.2.0-alpha.1-aarch64-apple-darwin \
+    0.3.0-alpha.1-aarch64-apple-darwin 0.3.0-devbuild
 
 # 混合架構：依去掉後綴後的版本比較
 KEEP_NEWEST=0.10.0-aarch64-apple-darwin codex_case mixed-arch 0.9.0-x86_64-apple-darwin \

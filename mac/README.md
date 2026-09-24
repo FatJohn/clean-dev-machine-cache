@@ -78,7 +78,8 @@ bash tests/run.sh       # 在 mac/ 目錄執行；-v 印出每支測試的完整
 每支測試都在 `mktemp -d` 建的沙盒裡用 `env -i` 執行，`HOME`、`LOG_DIR` 等路徑全部指到沙盒，
 並設 `DISABLE_TOOL_COMMANDS=true`，不碰真實家目錄。例外是 `t10-tool-commands.sh`：它要檢查外部指令的呼叫參數，
 所以設 `DISABLE_TOOL_COMMANDS=false`，改讓 PATH 只含假工具目錄、系統工具 symlink 目錄與 `/bin`（不含 `/usr/bin` 等會解析到真實清理工具的目錄），
-開跑前先確認每個工具都解析到假工具。安全保證的細節寫在 `tests/lib.sh` 開頭。
+開跑前先確認每個工具都解析到假工具。若 `/opt/flutter` 存在，`t10` 會整支 SKIP，避免偵測退化時碰到真實 SDK。
+安全保證的細節寫在 `tests/lib.sh` 開頭。
 擁有者 app 的判斷看的是整台機器的 process，所以測試時開著 Chrome／Edge 等，對應斷言會改成檢查「有跳過」。
 
 ## 相容性
