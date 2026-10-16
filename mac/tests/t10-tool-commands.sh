@@ -86,7 +86,7 @@ pass "PATH 不含 /usr/bin、/usr/local/bin、/opt/homebrew/bin"
 for t in $TOOLS; do
     got=$(env -i PATH="$TPATH" /bin/bash -c "command -v $t")
     echo "  command -v $t = $got"
-    [ "$got" = "$FAKE/$t" ] || die "$t 沒有解析到假工具目錄（$got）"
+    [ "$got" = "$FAKE/$t" ] || die "$t 沒有解析到假工具目錄（${got}）"
     pass "command -v $t 解析到假工具目錄"
 done
 for u in $SYS_UTILS; do
