@@ -91,6 +91,9 @@ xcrun simctl runtime delete <ID>          # 刪掉用不到的版本
 `/System/Library/AssetsV2` 受 SIP 保護，不要直接 `rm`，一律透過 `simctl runtime delete` 或
 Xcode「Settings → Components」刪除。
 
+`simctl runtime delete` 會把該 runtime 上執行中的模擬器強制關機，刪之前先用 `xcrun simctl list devices`
+確認沒有 `Booted` 的。刪掉之後要再用，`xcodebuild -downloadPlatform iOS` 可以重新下載。
+
 ## Android
 
 | 項目 | 路徑 | 典型大小 | 是什麼 | 怎麼清 | 代價 | script |
