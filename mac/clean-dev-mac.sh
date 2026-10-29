@@ -6,13 +6,13 @@
 #
 # 預設只報告（dry-run），加 --apply 才真的刪。分三級：
 #   A 級（預設）            沒有副作用，或只是重建成本
-#   B 級（--include-caches） 套件／瀏覽器快取，清了要重新下載
+#   B 級（--include-caches） 套件／瀏覽器／IDE 快取與舊版工具鏈，清了要重新下載或重建
 #   C 級（--projects DIR）   專案內久未動過的 build/ 與 node_modules
 #
 # 忙碌判斷：每個項目宣告自己的「擁有者 app」，該 app 還在跑就逐項跳過，不等待。
 #
 # 刻意不清（手動步驟見 docs/disk-space-knowledge.md）：垃圾桶、Android system-images／AVD／NDK、
-# iOS simulator runtime、Claude desktop VM、Chrome 裝置端 AI 模型、Docker、
+# iOS simulator runtime、Claude desktop VM、Chrome 裝置端 AI 模型、Docker、~/Library/Application Support 的 app 資料、
 # Time Machine 本機快照、Xcode Archives。
 #
 # Date: 2026-09-24
@@ -55,7 +55,8 @@ usage() {
 預設只報告會清什麼、可釋放多少（dry-run），不刪任何東西。
 
   --apply              真的刪除
-  --include-caches     加跑 B 級：套件管理器與瀏覽器快取（清了會重新下載）
+  --include-caches     加跑 B 級：套件管理器、瀏覽器與 IDE 快取、舊版工具鏈
+                       （清了會重新下載或重建索引）
   --projects DIR       加跑 C 級：在 DIR 底下找久未動過的 build/ 與 node_modules
                        可重複指定，或用冒號分隔多個目錄
                        拒絕 ~、/、~ 的上層目錄與 ~/Library 底下；隱藏目錄一律不進去
@@ -345,11 +346,14 @@ owner_running() {
         chrome)         pgrep -x "Google Chrome" >/dev/null 2>&1 ;;
         edge)           pgrep -x "Microsoft Edge" >/dev/null 2>&1 ;;
         cursor)         pgrep -x Cursor >/dev/null 2>&1 ;;
-        android_studio) pgrep -f 'Android Studio.app' >/dev/null 2>&1 ;;
+        android_studio) pgrep -f 'Android Studio[^/]*\.app' >/dev/null 2>&1 ;;
         gradle_daemon)  pgrep -f GradleDaemon >/dev/null 2>&1 ;;
+        kotlin_daemon)  pgrep -f KotlinCompileDaemon >/dev/null 2>&1 ;;
+        intellij)       pgrep -f 'IntelliJ IDEA[^/]*\.app' >/dev/null 2>&1 ;;
         emulator)       pgrep -f qemu-system >/dev/null 2>&1 ;;
         flutter_tool)   pgrep -f flutter_tools >/dev/null 2>&1 ;;
         dart_analyzer)  pgrep -f 'dart.*(analysis_server|language-server)' >/dev/null 2>&1 ;;
+        kotlin_lsp)     pgrep -f 'kotlin-server|intellij-server' >/dev/null 2>&1 ;;
         *) return 1 ;;
     esac
 }
@@ -363,9 +367,12 @@ owner_label() {
         cursor)         echo "Cursor" ;;
         android_studio) echo "Android Studio" ;;
         gradle_daemon)  echo "Gradle daemon" ;;
+        kotlin_daemon)  echo "Kotlin compile daemon" ;;
+        intellij)       echo "IntelliJ IDEA" ;;
         emulator)       echo "Android emulator（qemu-system）" ;;
         flutter_tool)   echo "flutter 指令（flutter_tools）" ;;
         dart_analyzer)  echo "Dart analysis server" ;;
+        kotlin_lsp)     echo "Kotlin LSP" ;;
         *)              echo "$1" ;;
     esac
 }
@@ -632,6 +639,23 @@ EOF
     [ "$found" = true ] || log_skip "沒有超過 1 天的 codex-runtime-install-* 暫存"
 }
 
+# 只報告：清了會掉資料或要改設定的大目錄，script 不刪，處理方式見 docs/disk-space-knowledge.md
+tier_a_home_data_report() {
+    local d
+    for d in "${HOME}"/.android/avd/*.avd; do
+        [ -d "$d" ] && [ ! -L "$d" ] || continue
+        log_info "[只報告] Android 模擬器 $(basename "$d" .avd) — $(human "$(dir_kb "$d")")（要縮小用 Device Manager 的 Wipe Data，模擬器內資料會消失）"
+    done
+    d="${HOME}/.claude/projects"
+    if [ -d "$d" ] && [ ! -L "$d" ]; then
+        log_info "[只報告] Claude Code 對話紀錄 — $(human "$(dir_kb "$d")") — ${d}（保留天數由 ~/.claude/settings.json 的 cleanupPeriodDays 控制，預設 30）"
+    fi
+    d="${HOME}/.codex/sessions"
+    if [ -d "$d" ] && [ ! -L "$d" ]; then
+        log_info "[只報告] Codex 對話紀錄 — $(human "$(dir_kb "$d")") — ${d}（要清就手動刪舊的年／月目錄）"
+    fi
+}
+
 run_tier_a() {
     log_info "=== A 級：沒有副作用或只是重建成本 ==="
     tier_a_code_sign_clone
@@ -640,6 +664,7 @@ run_tier_a() {
     tier_a_claude_tmp
     tier_a_homebrew
     tier_a_codex_runtimes
+    tier_a_home_data_report
 }
 
 # ============================================================
@@ -867,11 +892,110 @@ tier_b_xcode_browsers() {
     skip_if_busy "$c" "Cursor 快取" cursor || clean empty "$c" "Cursor 快取"
 }
 
+# version_split <名稱>  名稱結尾是純數字版本（1.9.23、2026.1.1）時印出「前綴<TAB>版本」；否則不印
+#   前綴裡還有 N.N 的不算（2.1.0-RC1、2.2.0-dev-1234 是預發行版，結尾的數字不是版本）。
+version_split() {
+    printf '%s\n' "$1" | sed -nE 's/^(.*[^0-9.])([0-9]+(\.[0-9]+)*)$/\1	\2/p' | grep -Ev '[0-9]\.[0-9].*	'
+}
+
+# keep_newest_versions <上層目錄> <find -name pattern> <描述>
+#   第一層符合 pattern 的目錄依「版本號前面的前綴」分組，每組只保留版本最新的一個（sort -V），其餘 purge。
+#   前綴不同就是不同組（AndroidStudio 與 AndroidStudioPreview 各留一個）；
+#   名稱結尾不是純數字版本的（2.1.0-RC、2.1.0-RC1、dependencies 等）認不出來，一律保留。
+keep_newest_versions() {
+    local parent="$1" pattern="$2" desc="$3" tab='	'
+    if [ ! -d "$parent" ]; then
+        log_skip "不存在，略過：${desc}"
+        return 0
+    fi
+
+    local list="" name split
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        split=$(version_split "$name")
+        if [ -z "$split" ]; then
+            log_info "${desc}：無法辨識版本，保留 ${name}"
+            continue
+        fi
+        list="${list}${split}${tab}${name}
+"
+    done <<EOF
+$(find "$parent" -mindepth 1 -maxdepth 1 -type d -name "$pattern" -exec basename {} \; | sort)
+EOF
+    if [ -z "$list" ]; then
+        log_skip "沒有可辨識版本的項目，略過：${desc}"
+        return 0
+    fi
+
+    # 每組的最新版：組內只排「版本<TAB>名稱」，不把不同前綴混在一起 sort -V
+    local keep="" prefix
+    while IFS= read -r prefix; do
+        [ -n "$prefix" ] || continue
+        keep="${keep}$(printf '%s' "$list" | awk -F'\t' -v p="$prefix" '$1 == p {print $2 "\t" $3}' | sort -V | tail -n 1 | cut -f 2)
+"
+    done <<EOF
+$(printf '%s' "$list" | cut -f 1 | sort -u)
+EOF
+
+    while IFS="$tab" read -r prefix _ name; do
+        [ -n "$name" ] || continue
+        case "
+${keep}" in
+            *"
+${name}
+"*) log_info "${desc}：保留最新版 ${name}" ;;
+            *) clean purge "${parent}/${name}" "${desc} 舊版本 ${name}" ;;
+        esac
+    done <<EOF
+${list}
+EOF
+}
+
+# Kotlin LSP workspace 索引：每個開過的專案一份（workspaces/<hash>/index/...）。
+#   不用 clean_older：LSP 只改深層的檔案，<hash> 本身的 mtime 不會跟著變，天天在用的專案也會被判成舊的。
+#   改成整個目錄裡沒有任何項目在 N 天內改過，才把該 workspace 刪掉。
+clean_idle_workspaces() {
+    local ws="$1" days="$2" desc="$3"
+    if [ -L "$ws" ]; then
+        log_skip "是 symlink，為安全起見略過：${desc} — ${ws}"
+        return 0
+    fi
+    if [ ! -d "$ws" ]; then
+        log_skip "不存在，略過：${desc}"
+        return 0
+    fi
+    local mins found=false d
+    mins=$(days_to_min "$days")
+    while IFS= read -r d; do
+        [ -n "$d" ] || continue
+        [ -z "$(find "$d" -mmin "-${mins}" -print -quit 2>/dev/null)" ] || continue
+        found=true
+        clean purge "$d" "${desc} $(basename "$d")（${days} 天內沒有更新）"
+    done <<EOF
+$(find "$ws" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+EOF
+    [ "$found" = true ] || log_skip "沒有超過 ${days} 天沒更新的${desc}"
+}
+
+# Kotlin／Android：舊版工具鏈與 IDE 快取，清了只是下次用到時重新下載或重建索引
+tier_b_kotlin_android() {
+    skip_if_busy "" "Kotlin/Native 舊版本" gradle_daemon kotlin_daemon android_studio intellij \
+        || keep_newest_versions "${HOME}/.konan" 'kotlin-native-prebuilt-*' "Kotlin/Native 工具鏈"
+
+    skip_if_busy "" "Android Studio 舊版本快取" android_studio \
+        || keep_newest_versions "${HOME}/Library/Caches/Google" 'AndroidStudio*' "Android Studio 快取"
+
+    local ws="${HOME}/Library/Caches/JetBrains/IntelliJServer/workspaces"
+    skip_if_busy "$ws" "Kotlin LSP workspace 索引" kotlin_lsp \
+        || clean_idle_workspaces "$ws" 14 "Kotlin LSP workspace 索引"
+}
+
 run_tier_b() {
-    log_info "=== B 級：套件與瀏覽器快取（會重新下載） ==="
+    log_info "=== B 級：套件、瀏覽器與 IDE 快取（會重新下載或重建） ==="
     tier_b_packages
     tier_b_playwright_report
     tier_b_xcode_browsers
+    tier_b_kotlin_android
 }
 
 # ============================================================
