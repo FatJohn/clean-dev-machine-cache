@@ -4,7 +4,8 @@
 可以當手動查詢用的手冊，也說明 `clean-dev-mac.sh` 涵蓋到哪裡。
 
 「script」欄的意思：**A**／**B**／**C** 是 `clean-dev-mac.sh` 的等級
-（見 [usage.md](usage.md)）；**不涵蓋**代表只能照本文手動處理。
+（見 [usage.md](usage.md)）；**只報告**代表 script 只印大小；**不涵蓋**代表只能照本文手動處理。
+`~/Library/Application Support` 底下各 app 的資料怎麼判斷、移除 app 後要清哪些殘留，見 [application-support.md](application-support.md)。
 典型大小是量級參考，實際依使用習慣差很多；有標「實例」的出自下方 2026-09-24 那台機器。
 
 ## 先找出大東西在哪
@@ -99,13 +100,16 @@ Xcode「Settings → Components」刪除。
 | 項目 | 路徑 | 典型大小 | 是什麼 | 怎麼清 | 代價 | script |
 |---|---|---|---|---|---|---|
 | system-images | `~/Library/Android/sdk/system-images` | 每個 2–8 GB（實例 21.56） | emulator 的系統映像 | `sdkmanager --uninstall` | 建該版本的 AVD 要重新下載 | 不涵蓋 |
-| AVD | `~/.android/avd/*.avd` | 每台數 GB（實例兩台 18.61） | 模擬器的使用者資料與快照 | Device Manager 刪除，或 `avdmanager delete avd -n <名稱>` | 模擬器內資料全失 | 不涵蓋 |
+| AVD | `~/.android/avd/*.avd` | 每台數 GB（實例兩台 18.61） | 模擬器的使用者資料與快照；`userdata-qemu.img.qcow2` 隨模擬器內安裝的 app 與資料長大，刪檔後不會縮回 | 不用的 AVD：Device Manager 刪除，或 `avdmanager delete avd -n <名稱>`；還要用的：Device Manager 的「Wipe Data」 | 模擬器內資料全失 | A 只報告 |
 | AVD 快照 | `~/.android/avd/<名稱>.avd/snapshots/default_boot/ram.bin` | 約等於模擬器 RAM（實例各約 3.8） | Quick Boot 用的記憶體快照 | 刪 `snapshots/default_boot`，或 AVD 設定改成 Cold Boot | 下次開機變慢 | 不涵蓋 |
 | NDK | `~/Library/Android/sdk/ndk/<版本>` | 每版 2–3 GB（實例 4 版 10.56） | 原生編譯工具鏈 | `sdkmanager --uninstall "ndk;<版本>"` | 需要該版本的專案會重新下載 | 不涵蓋 |
 | Gradle caches | `~/.gradle/caches` | 10 GB 以上很常見（實例 14.80） | 依賴、transform、build cache，舊版 Gradle 的目錄不會自己消失 | 刪除 `~/.gradle/caches` | 下次 build 重新下載 | B |
 | Gradle daemon log／暫存 | `~/.gradle/daemon`、`~/.gradle/.tmp` | 實測 daemon 9.2 MB | daemon 的 log 與暫存 | 刪除 | 無 | B |
 | Gradle wrapper | `~/.gradle/wrapper/dists` | 每版約 200 MB（實例 1.74） | 各版 Gradle 本體 | 刪掉沒在用的版本目錄 | 用到時重新下載 | 不涵蓋（script 刻意保留；`~/.gradle/gradle.properties` 常含 signing 設定，也保留） |
-| Kotlin/Native | `~/.konan` | 實例 2.50 | KMP 的 Kotlin/Native 工具鏈 | 刪除 | 下次 KMP build 重新下載 | 不涵蓋 |
+| Kotlin/Native | `~/.konan/kotlin-native-prebuilt-*` | 每版約 1 GB（實例 2.50） | KMP 的 Kotlin/Native 工具鏈，每個用過的 Kotlin 版本一份 | 每個架構只留最新版，刪掉舊版本目錄；`dependencies` 保留 | 釘在舊版的專案下次 build 重新下載 | B |
+| Android Studio 舊版快取 | `~/Library/Caches/Google/AndroidStudio<版本>` | 每版數百 MB | 各版 Android Studio 的索引與快取，升級後舊版目錄不會自己消失 | 刪掉沒在用的版本目錄 | 無（舊版已不用） | B |
+| Kotlin LSP 索引 | `~/Library/Caches/JetBrains/IntelliJServer/workspaces` | 每個專案約 200 MB | `kotlin-lsp` 為每個開過的專案建的索引 | 刪除久未開的專案目錄 | 下次打開該專案重建索引 | B（14 天） |
+| Maven 本機套件庫 | `~/.m2/repository` | 數百 MB 起 | Maven／部分 Gradle 專案下載的相依套件，也含 `mvn install` 裝進來的本機套件 | 確認沒有只存在本機的套件後刪除 | 重新下載；本機 install 的套件要重新 build | 不涵蓋 |
 
 **看 AVD 用的是哪個 system-image：**
 
@@ -235,7 +239,8 @@ script 不涵蓋：volume 裡可能有資料，一定要先看過 `docker system
 | Claude desktop VM | `~/Library/Application Support/Claude/vm_bundles` | 實例 11.24（`rootfs.img` 8.93） | desktop app 執行本機工作用的 VM 映像 | 結束 app 後刪除 `vm_bundles` | 下次使用相關功能時重新下載 | 不涵蓋 |
 | Claude desktop Cache | `~/Library/Application Support/Claude/Cache` | 實例 1.17 | app 快取 | 結束 app 後刪除 | 無 | 不涵蓋 |
 | Claude Code 暫存 | `/private/tmp/claude-<UID>` | 實例 4.60 | 各 session 的暫存與 scratchpad | 刪除超過一週的 session 目錄 | 無法回頭看舊 session 的暫存檔 | A（7 天） |
-| Claude Code 對話紀錄 | `~/.claude/projects` | 實例 2.41 | 各專案的 session transcript | 刪除舊的 `.jsonl`；或在 settings 設 `cleanupPeriodDays` 讓它自動清 | 無法 resume 舊 session | 不涵蓋 |
+| Claude Code 對話紀錄 | `~/.claude/projects` | 實例 2.41；大量用 subagent 時可到 10 GB（subagent transcript 在各 session 的 `subagents/` 底下） | 各專案的 session transcript | 在 `~/.claude/settings.json` 設 `cleanupPeriodDays`（預設 30）讓它自動清；或刪除舊的 `.jsonl` | 無法 resume 舊 session | A 只報告 |
+| Codex 對話紀錄 | `~/.codex/sessions`、`~/.codex/thread_history_*.sqlite` | 數百 MB 到數 GB | Codex 的 session 紀錄，`sessions` 依年／月分目錄 | 刪除舊的年／月目錄 | 無法 resume 舊 session | A 只報告（`sessions`） |
 | Codex CLI 舊版本 | `~/.codex/packages/standalone/releases` | 每版約 270 MB（實例 24 版 6.45） | 自動更新留下的各版本 | 保留 `current` 指向的版本、最新的穩定版與無法辨識的名稱（去掉平台後綴後，整串不符穩定版或預發行版格式的），其餘刪除 | 無 | A |
 | Codex runtime | `~/.cache/codex-runtimes` | 實例 3.53 | runtime 與安裝暫存 | 刪除 `codex-runtime-install-*` | 無 | A（1 天） |
 | 編輯器 extensions | `~/.vscode/extensions`、`~/.cursor/extensions`、`~/.windsurf/extensions` | 數百 MB 到數 GB | 各 extension，更新後舊版目錄可能殘留 | 同一 extension 有多個版本目錄時，刪掉舊的 | 無 | 不涵蓋 |
@@ -291,7 +296,7 @@ script 不涵蓋：volume 裡可能有資料，一定要先看過 `docker system
 | | `~/Library/pnpm/package-manager-store`（pnpm 自己的版本管理） | 1.81 | 手動 |
 | | `.pub-cache` | 1.46 | B |
 | | `.dartServer` | 1.62 | B |
-| | `.konan` | 2.50 | 手動 |
+| | `.konan` | 2.50 | B（舊版本） |
 | 專案 | `node_modules` 合計 | 26.05 | C |
 | | `build` 目錄合計（單一 Flutter 專案最大 4.61） | 15.95 | C（僅 Flutter） |
 | 其他 | Docker.raw | 4.01 | 手動 |

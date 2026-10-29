@@ -60,6 +60,9 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
 | Claude Code 暫存 | `$CLAUDE_TMP_DIR/<專案>/<session>` | 每個專案目錄下超過 7 天的 session | — |
 | Homebrew | — | `brew cleanup --prune=all`（dry-run 用 `-n`） | — |
 | Codex runtime 安裝暫存 | `~/.cache/codex-runtimes/codex-runtime-install-*` | 超過 1 天的才刪 | — |
+| Android 模擬器（AVD） | `~/.android/avd/*.avd` | **只報告**每台的大小，不清 | — |
+| Claude Code 對話紀錄 | `~/.claude/projects` | **只報告**大小，不清 | — |
+| Codex 對話紀錄 | `~/.codex/sessions` | **只報告**大小，不清 | — |
 
 - **code_sign_clone** 是 Chrome 更新時為了驗章複製出來的整份 app，照理說用完會刪，實際上會殘留。
   實測一台機器累積 10 份、共約 14 GiB。瀏覽器開著時裡面可能有正在使用的那份，所以瀏覽器在跑就跳過；
@@ -76,6 +79,10 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
 - **Claude Code 暫存**的第一層是專案目錄、第二層才是各 session。script 只刪第二層超過 7 天沒動過的
   session，不直接刪整個專案目錄，以免連帶清掉還在跑的 session。判斷依據是 session 目錄本身的 mtime，
   連續跑超過 7 天、期間又沒有在該目錄第一層新增檔案的 session，理論上可能被誤判。
+- **只報告的三項**清了會掉資料或要改設定，所以只印大小：AVD 要縮小用 Android Studio Device Manager 的
+  「Wipe Data」（模擬器內資料會消失）；Claude Code 對話紀錄由 `~/.claude/settings.json` 的 `cleanupPeriodDays`
+  控制保留天數（預設 30）；Codex 對話紀錄依年／月分目錄，要清就手動刪舊的。
+  細節見 [disk-space-knowledge.md 的〈AI 工具〉](disk-space-knowledge.md#ai-工具)。
 
 ### B 級：`--include-caches`，清了會重新下載
 
@@ -102,6 +109,9 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 | Chrome 快取 | 清空 `~/Library/Caches/Google/Chrome` | 同左 | Google Chrome |
 | Edge 快取 | 清空 `~/Library/Caches/Microsoft Edge` | 同左 | Microsoft Edge |
 | Cursor 快取 | 清空 `~/Library/Caches/Cursor` | 同左 | Cursor |
+| Kotlin/Native 舊版本 | `~/.konan/kotlin-native-prebuilt-*` 每組只保留版本最新的一個，其餘刪除（見表下說明） | 各版本目錄 | Android Studio、Gradle daemon、Kotlin compile daemon、IntelliJ IDEA |
+| Android Studio 舊版本快取 | `~/Library/Caches/Google/AndroidStudio*` 每組只保留版本最新的一個，其餘刪除 | 各版本目錄 | Android Studio |
+| Kotlin LSP workspace 索引 | 刪除 `~/Library/Caches/JetBrains/IntelliJServer/workspaces` 下整個目錄超過 14 天沒有更新的項目 | 同左 | Kotlin LSP |
 | Playwright | **只報告**，不清 | `~/Library/Caches/ms-playwright*` | — |
 
 - **npm**：以前用 `sudo npm`（例如 `sudo npm install -g`）裝過東西時，npm 會以 root 身分把檔案寫進
@@ -136,6 +146,15 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
   不論 SDK 位置從哪來，都要有 `bin/flutter` 與 `bin/internal`、而且不是 `/`、`~` 或 `~` 的上層目錄，
   才算 Flutter SDK；例如 `FLUTTER_ROOT=$HOME` 時 `~/bin/cache` 不會被刪。明確設定的 `FLUTTER_ROOT`
   驗證不過會記 WARN；自動偵測的候選驗證不過就換下一個。
+- **Kotlin/Native、Android Studio 快取**的「每組只保留最新版」：目錄名稱結尾要是純數字版本（`1.9.23`、
+  `2026.1.1`），版本號前面的部分是組名，所以 `kotlin-native-prebuilt-macos-aarch64-` 與 `-x86_64-`、
+  `AndroidStudio` 與 `AndroidStudioPreview` 各自保留一個。組內以 `sort -V` 比較（`1.10.1` 比 `1.9.23` 新）。
+  結尾不是純數字版本的名稱（`2.1.0-RC`、`.konan/dependencies`），以及組名裡還有 `N.N` 的預發行版
+  （`2.1.0-RC1`、`2.0.20-Beta2`、`2.2.0-dev-1234`，結尾的數字不是版本）一律保留並記「無法辨識版本」。
+  專案若釘在被刪的舊版 Kotlin，下次 build 會重新下載該版（每版約 1 GB）。
+- **Kotlin LSP workspace 索引**是 `kotlin-lsp` 為每個開過的專案建的索引（每份約 200 MB），判斷依據是
+  目錄裡所有檔案與子目錄的 mtime：任何一個在 14 天內改過就保留（LSP 只改深層的檔案，第一層目錄的 mtime
+  不會跟著變）；LSP 在跑時整項跳過。刪掉的專案下次打開會重建索引。
 - **Playwright** 只列出各目錄大小，以及同一瀏覽器有多個 revision 時較舊的那幾個。
   Playwright 有自己的 revision 對應規則，砍錯會讓測試報錯（`Executable doesn't exist …`），要重跑
   `npx playwright install` 才能恢復，所以留給人手動處理，
@@ -174,7 +193,7 @@ DIR 是 `/`、`~`、`~` 的上層目錄（例如 `/Users`），或在 `~/Library
 所有「超過 N 天」都是指 mtime 早於「執行當下往前 N×24 小時」，用 `find -mmin +(N×1440)` 判斷。
 不用 `find -mtime +N`：實測 macOS 的 `-mtime +N` 要超過 N+1 天才命中（`-mtime +1` 要超過 48 小時才命中），比字面多一天。
 適用於 `--stale-days`（最小 1）、`KEEP_LOGS_DAYS`（最小 1）、Claude Code 暫存的 7 天、Codex runtime 安裝暫存的
-1 天、iOS／watchOS DeviceSupport 的 90 天。例如 `--stale-days 1` 時，25 小時前的 `build/` 會清、
+1 天、Kotlin LSP workspace 索引的 14 天、iOS／watchOS DeviceSupport 的 90 天。例如 `--stale-days 1` 時，25 小時前的 `build/` 會清、
 23 小時前的不會。
 
 ## 擁有者 app 跳過機制
@@ -189,11 +208,14 @@ dry-run 也照樣判斷，會印出「會跳過 X：Y 正在執行」並附上�
 | Google Chrome | `pgrep -x "Google Chrome"` | Chrome code_sign_clone、Chrome 快取 |
 | Microsoft Edge | `pgrep -x "Microsoft Edge"` | Edge code_sign_clone、Edge 快取 |
 | Cursor | `pgrep -x Cursor` | Cursor 快取 |
-| Android Studio | `pgrep -f 'Android Studio.app'` | Gradle caches／daemon／.tmp |
-| Gradle daemon | `pgrep -f GradleDaemon` | Gradle caches／daemon／.tmp |
+| Android Studio | `pgrep -f 'Android Studio[^/]*\.app'`（含 Preview） | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Android Studio 舊版本快取 |
+| Gradle daemon | `pgrep -f GradleDaemon` | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本 |
+| Kotlin compile daemon | `pgrep -f KotlinCompileDaemon` | Kotlin/Native 舊版本 |
+| IntelliJ IDEA | `pgrep -f 'IntelliJ IDEA[^/]*\.app'` | Kotlin/Native 舊版本 |
 | Android emulator | `pgrep -f qemu-system` | Gradle caches／daemon／.tmp（所有 Android 相關項目） |
 | flutter 指令 | `pgrep -f flutter_tools` | pub cache、Flutter SDK artifacts |
 | Dart analysis server | `pgrep -f 'dart.*(analysis_server\|language-server)'` | pub cache、Flutter SDK artifacts |
+| Kotlin LSP | `pgrep -f 'kotlin-server\|intellij-server'` | Kotlin LSP workspace 索引 |
 
 Gradle daemon 在 Android Studio 關掉後還會常駐一段時間；急著清的話先跑 `./gradlew --stop`。
 
@@ -208,7 +230,9 @@ analysis server，而它就是從 `bin/cache/dart-sdk` 執行的，也會讀 pub
 | 項目 | 不自動化的理由 |
 |---|---|
 | 垃圾桶 | TCC（隱私權限）會擋，終端機沒有「完整磁碟取用權限」就讀不到 `~/.Trash`；而且清空是使用者的決定 |
-| Android system-images、AVD、NDK | 要判斷哪個 AVD 還在用、專案要哪個 NDK 版本 |
+| Android system-images、AVD、NDK | 要判斷哪個 AVD 還在用、專案要哪個 NDK 版本（AVD 只報告大小） |
+| Claude Code／Codex 對話紀錄 | 刪了就不能 resume 舊 session；Claude Code 有自己的保留天數設定（只報告大小） |
+| `~/Library/Application Support` 底下的 app 資料 | 裡面混著設定、登入狀態與快取，要逐個 app 判斷；見 [application-support.md](application-support.md) |
 | iOS simulator runtime | 要判斷專案還要測哪些 iOS 版本 |
 | Claude desktop VM（`vm_bundles`） | app 自己管理，刪了下次啟動會重新下載，而且可能正在使用 |
 | Chrome 裝置端 AI 模型 | 要從 Chrome 設定關閉，直接刪會被重新下載 |

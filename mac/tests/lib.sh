@@ -153,11 +153,14 @@ real_busy() {
         chrome)         pgrep -x "Google Chrome" >/dev/null 2>&1 ;;
         edge)           pgrep -x "Microsoft Edge" >/dev/null 2>&1 ;;
         cursor)         pgrep -x Cursor >/dev/null 2>&1 ;;
-        android_studio) pgrep -f 'Android Studio.app' >/dev/null 2>&1 ;;
+        android_studio) pgrep -f 'Android Studio[^/]*\.app' >/dev/null 2>&1 ;;
         gradle_daemon)  pgrep -f GradleDaemon >/dev/null 2>&1 ;;
+        kotlin_daemon)  pgrep -f KotlinCompileDaemon >/dev/null 2>&1 ;;
+        intellij)       pgrep -f 'IntelliJ IDEA[^/]*\.app' >/dev/null 2>&1 ;;
         emulator)       pgrep -f qemu-system >/dev/null 2>&1 ;;
         flutter_tool)   pgrep -f flutter_tools >/dev/null 2>&1 ;;
         dart_analyzer)  pgrep -f 'dart.*(analysis_server|language-server)' >/dev/null 2>&1 ;;
+        kotlin_lsp)     pgrep -f 'kotlin-server|intellij-server' >/dev/null 2>&1 ;;
         *) return 1 ;;
     esac
 }
