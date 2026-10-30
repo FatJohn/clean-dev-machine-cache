@@ -51,7 +51,7 @@ log 寫在 `~/logs/clean-dev-mac/`（可用 `LOG_DIR` 覆寫），`--apply` 時�
 | 等級 | 旗標 | 清什麼 | 代價 |
 |---|---|---|---|
 | A | 預設 | Chrome／Edge code_sign_clone、Xcode DerivedData／Products／應用程式快取、失效模擬器、CoreSimulator logs、Codex CLI 舊版本、Claude Code 舊 session 暫存、Homebrew（`brew cleanup --prune=all`）、Codex runtime 安裝暫存；AVD、Claude Code／Codex 對話紀錄只報告大小 | 沒有副作用，或只是重建成本 |
-| B | `--include-caches` | npm、pnpm、Yarn、Bun、Go、.NET、Gradle、CocoaPods、SwiftPM、pub cache、Flutter SDK artifacts、Dart analysis server、舊的 iOS／watchOS DeviceSupport、Chrome／Edge／Cursor 快取、Kotlin/Native 與 Android Studio 快取的舊版本、久未使用的 Kotlin LSP 索引；Playwright 只報告 | 下次用到時重新下載 |
+| B | `--include-caches` | npm、pnpm、Yarn、Bun、Go、.NET、Gradle、CocoaPods、SwiftPM、pub cache、Flutter SDK artifacts、Dart analysis server、舊的 iOS／watchOS DeviceSupport、Chrome／Edge／Cursor 快取、Kotlin/Native 與 Android Studio 快取的舊版本、久未使用的 Kotlin LSP 索引、Robolectric 下載的 android-all；Playwright 只報告 | 下次用到時重新下載 |
 | C | `--projects DIR` | DIR 底下久未動過（`--stale-days`，預設 30 天）的 Flutter `build/` 與 `node_modules` | 下次打開專案要重新 build／install |
 
 各項目的路徑與做法見 [docs/usage.md 的「三個等級」](docs/usage.md#三個等級)。

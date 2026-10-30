@@ -112,6 +112,7 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 | Kotlin/Native 舊版本 | `~/.konan/kotlin-native-prebuilt-*` 每組只保留版本最新的一個，其餘刪除（見表下說明） | 各版本目錄 | Android Studio、Gradle daemon、Kotlin compile daemon、IntelliJ IDEA |
 | Android Studio 舊版本快取 | `~/Library/Caches/Google/AndroidStudio*` 每組只保留版本最新的一個，其餘刪除 | 各版本目錄 | Android Studio |
 | Kotlin LSP workspace 索引 | 刪除 `~/Library/Caches/JetBrains/IntelliJServer/workspaces` 下整個目錄超過 14 天沒有更新的項目 | 同左 | Kotlin LSP |
+| Robolectric android-all | 刪除 `~/.m2/repository/org/robolectric` 下的 `android-all` 與 `android-all-instrumented`（見表下說明） | 各 artifact 目錄 | Android Studio、Gradle daemon、IntelliJ IDEA |
 | Playwright | **只報告**，不清 | `~/Library/Caches/ms-playwright*` | — |
 
 - **npm**：以前用 `sudo npm`（例如 `sudo npm install -g`）裝過東西時，npm 會以 root 身分把檔案寫進
@@ -155,6 +156,12 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 - **Kotlin LSP workspace 索引**是 `kotlin-lsp` 為每個開過的專案建的索引（每份約 200 MB），判斷依據是
   目錄裡所有檔案與子目錄的 mtime：任何一個在 14 天內改過就保留（LSP 只改深層的檔案，第一層目錄的 mtime
   不會跟著變）；LSP 在跑時整項跳過。刪掉的專案下次打開會重建索引。
+- **Robolectric android-all** 是 Robolectric 依測試的 Android SDK 版本下載的 Android framework jar
+  （`android-all-instrumented` 或 `android-all`，依 Robolectric 版本而定；每個 SDK 版本約 100–200 MB），
+  下次跑 Robolectric 測試時重新下載，每個 SDK 版本都刪。設了 `robolectric.offline=true`、
+  jar 是手動放進來的環境，清掉後測試跑不起來，不要對它跑 B 級。用 `mvn test` 跑 Robolectric 時沒有對應的擁有者，
+  清之前先確認沒有 Maven 測試在跑。只刪這兩個 artifact；`~/.m2/repository` 的其他套件可能是
+  `mvn install`／`publishToMavenLocal` 裝進來、只存在本機的套件，不碰。
 - **Playwright** 只列出各目錄大小，以及同一瀏覽器有多個 revision 時較舊的那幾個。
   Playwright 有自己的 revision 對應規則，砍錯會讓測試報錯（`Executable doesn't exist …`），要重跑
   `npx playwright install` 才能恢復，所以留給人手動處理，
@@ -208,10 +215,10 @@ dry-run 也照樣判斷，會印出「會跳過 X：Y 正在執行」並附上�
 | Google Chrome | `pgrep -x "Google Chrome"` | Chrome code_sign_clone、Chrome 快取 |
 | Microsoft Edge | `pgrep -x "Microsoft Edge"` | Edge code_sign_clone、Edge 快取 |
 | Cursor | `pgrep -x Cursor` | Cursor 快取 |
-| Android Studio | `pgrep -f 'Android Studio[^/]*\.app'`（含 Preview） | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Android Studio 舊版本快取 |
-| Gradle daemon | `pgrep -f GradleDaemon` | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本 |
+| Android Studio | `pgrep -f 'Android Studio[^/]*\.app'`（含 Preview） | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Android Studio 舊版本快取、Robolectric android-all |
+| Gradle daemon | `pgrep -f GradleDaemon` | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Robolectric android-all |
 | Kotlin compile daemon | `pgrep -f KotlinCompileDaemon` | Kotlin/Native 舊版本 |
-| IntelliJ IDEA | `pgrep -f 'IntelliJ IDEA[^/]*\.app'` | Kotlin/Native 舊版本 |
+| IntelliJ IDEA | `pgrep -f 'IntelliJ IDEA[^/]*\.app'` | Kotlin/Native 舊版本、Robolectric android-all |
 | Android emulator | `pgrep -f qemu-system` | Gradle caches／daemon／.tmp（所有 Android 相關項目） |
 | flutter 指令 | `pgrep -f flutter_tools` | pub cache、Flutter SDK artifacts |
 | Dart analysis server | `pgrep -f 'dart.*(analysis_server\|language-server)'` | pub cache、Flutter SDK artifacts |

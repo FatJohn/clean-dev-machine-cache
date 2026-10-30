@@ -2,6 +2,7 @@
 # B 級的 Kotlin／Android 項目：keep_newest_versions 每組前綴只留最新版（.konan、Android Studio 快取），
 # 認不出版本的名稱（含 -RC1、-Beta2 這類結尾是數字的預發行版）與 symlink 一律保留；擁有者在跑時跳過。
 # Kotlin LSP workspace 索引只清整個目錄 14 天內都沒有更新的，LSP 在跑時整項跳過。
+# Robolectric 只清 ~/.m2 的 android-all 與 android-all-instrumented，其他 artifact 與 symlink 保留；擁有者在跑時跳過。
 # 以及 A 級的只報告項目（AVD、Claude Code／Codex 對話紀錄）不刪任何東西。
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 source "$(dirname "$0")/lib.sh"
@@ -12,7 +13,11 @@ H="$SB/h"; mkdir -p "$H"
 K="$H/.konan"
 G="$H/Library/Caches/Google"
 WS="$H/Library/Caches/JetBrains/IntelliJServer/workspaces"
+RL="$H/.m2/repository/org/robolectric"
 setup() {
+    mkdir -p "$RL/android-all-instrumented/15-robolectric-13954326-i7" "$RL/android-all-foo/1.0" \
+        "$RL/robolectric/4.14" "$H/.m2/repository/tw/com/mylib/1.0" "$SB/elsewhere/android-all/14-robolectric-10818077"
+    ln -sfn "$SB/elsewhere/android-all" "$RL/android-all"
     mkdir -p "$K/kotlin-native-prebuilt-macos-aarch64-1.9.23/bin" "$K/kotlin-native-prebuilt-macos-aarch64-1.10.1/bin" \
         "$K/kotlin-native-prebuilt-macos-aarch64-2.0.0/bin" "$K/kotlin-native-prebuilt-macos-x86_64-1.9.23/bin" \
         "$K/kotlin-native-prebuilt-macos-x86_64-1.8.0/bin" "$K/kotlin-native-prebuilt-macos-x86_64-1.10.0/bin" "$K/kotlin-native-prebuilt-macos-aarch64-2.1.0-RC/bin" \
@@ -40,6 +45,12 @@ a_eq "$?" 0 "dry-run exit 0"
 a_exists "$K/kotlin-native-prebuilt-macos-aarch64-1.9.23" "dry-run：舊 Kotlin/Native 保留"
 a_exists "$G/AndroidStudio2024.3.2" "dry-run：舊 Android Studio 快取保留"
 a_exists "$WS/old" "dry-run：舊 workspace 索引保留"
+a_exists "$RL/android-all-instrumented/15-robolectric-13954326-i7" "dry-run：Robolectric android-all 保留"
+if any_real_busy gradle_daemon android_studio intellij; then
+    skip "真實機器上 Gradle／Android Studio／IntelliJ 在跑，略過 dry-run 的 Robolectric log 斷言"
+else
+    a_log "$OUTFILE" "[DRY-RUN] 會清除 Robolectric android-all android-all-instrumented" "dry-run log：列出 Robolectric android-all"
+fi
 if any_real_busy gradle_daemon kotlin_daemon android_studio intellij; then
     skip "真實機器上 Gradle／Android Studio 在跑，略過 dry-run 的 Kotlin/Native log 斷言"
 else
@@ -80,6 +91,18 @@ else
     a_gone "$G/AndroidStudioPreview2025.3" "Preview 舊版刪除"
 fi
 a_exists "$G/DriveFS/c" "Caches/Google 底下其他目錄不動"
+if any_real_busy gradle_daemon android_studio intellij; then
+    skip "真實機器上 Gradle／Android Studio／IntelliJ 在跑，略過 Robolectric 斷言"
+    a_exists "$RL/android-all-instrumented" "擁有者在跑：Robolectric android-all 保留"
+else
+    a_gone "$RL/android-all-instrumented" "Robolectric android-all-instrumented 刪除"
+    a_log "$OUTFILE" "已清除 Robolectric android-all android-all-instrumented" "log：清除 Robolectric android-all-instrumented"
+fi
+a_exists "$RL/robolectric/4.14" "Robolectric 其他 artifact 保留"
+a_exists "$RL/android-all-foo/1.0" "名稱以 android-all 開頭的其他 artifact 保留"
+a_exists "$H/.m2/repository/tw/com/mylib/1.0" ".m2 其他套件保留"
+a_exists "$RL/android-all" "Robolectric android-all 是 symlink：本身保留"
+a_exists "$SB/elsewhere/android-all/14-robolectric-10818077" "Robolectric symlink 指向的目錄保留"
 if any_real_busy kotlin_lsp; then
     skip "真實機器上 Kotlin LSP 在跑，略過 workspace 索引斷言"
     a_exists "$WS/old" "擁有者在跑：舊 workspace 索引保留"
@@ -117,8 +140,25 @@ OUTFILE="$SB/apply-kdaemon.txt"
 run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "[apply kotlin daemon] exit 0"
 a_exists "$K/kotlin-native-prebuilt-macos-aarch64-1.9.23" "Kotlin compile daemon 在跑：舊 Kotlin/Native 保留"
-a_log "$OUTFILE" "跳過 Kotlin/Native 舊版本：Kotlin compile daemon 正在執行" "log：Kotlin/Native 因 Kotlin compile daemon 跳過"
+# 擁有者依序判斷，gradle_daemon 排在前面；真實的 Gradle daemon 在跑時 log 寫的是它，不是假 process
+if any_real_busy gradle_daemon; then
+    skip "真實機器上 Gradle daemon 在跑，略過 Kotlin compile daemon 的 log 斷言"
+else
+    a_log "$OUTFILE" "跳過 Kotlin/Native 舊版本：Kotlin compile daemon 正在執行" "log：Kotlin/Native 因 Kotlin compile daemon 跳過"
+fi
 kill "$P2" 2>/dev/null; wait 2>/dev/null; BG_PIDS=""
+
+echo "[Gradle daemon 在跑]"
+setup
+bash -c 'exec -a "java -cp x org.gradle.launcher.daemon.bootstrap.Gradle''Daemon 9.8.2" sleep 300' & P4=$!
+BG_PIDS="$P4"
+sleep 1
+OUTFILE="$SB/apply-gradle.txt"
+run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 0 "[apply gradle daemon] exit 0"
+a_exists "$RL/android-all-instrumented/15-robolectric-13954326-i7" "Gradle daemon 在跑：Robolectric android-all 保留"
+a_log "$OUTFILE" "跳過 Robolectric android-all：Gradle daemon 正在執行" "log：Robolectric 因 Gradle daemon 跳過"
+kill "$P4" 2>/dev/null; wait 2>/dev/null; BG_PIDS=""
 
 echo "[Android Studio Preview 在跑]"
 setup
@@ -130,6 +170,44 @@ run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "[apply preview] exit 0"
 a_exists "$G/AndroidStudioPreview2025.3" "Preview 在跑：舊 Android Studio 快取保留"
 a_log "$OUTFILE" "跳過 Android Studio 舊版本快取：Android Studio 正在執行" "log：Android Studio 快取因 Preview 跳過"
+a_exists "$RL/android-all-instrumented/15-robolectric-13954326-i7" "Android Studio 在跑：Robolectric android-all 保留"
+if any_real_busy gradle_daemon; then
+    skip "真實機器上 Gradle daemon 在跑，略過 Robolectric 的 log 斷言"
+else
+    a_log "$OUTFILE" "跳過 Robolectric android-all：Android Studio 正在執行" "log：Robolectric 因 Android Studio 跳過"
+fi
 kill "$P3" 2>/dev/null; wait 2>/dev/null; BG_PIDS=""
+
+echo "[IntelliJ IDEA 在跑]"
+setup
+bash -c 'exec -a "/Applications/IntelliJ IDEA CE''.app/Contents/MacOS/idea" sleep 300' & P5=$!
+BG_PIDS="$P5"
+sleep 1
+OUTFILE="$SB/apply-idea.txt"
+run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 0 "[apply idea] exit 0"
+a_exists "$RL/android-all-instrumented/15-robolectric-13954326-i7" "IntelliJ 在跑：Robolectric android-all 保留"
+if any_real_busy gradle_daemon android_studio; then
+    skip "真實機器上 Gradle daemon／Android Studio 在跑，略過 Robolectric 的 IntelliJ log 斷言"
+else
+    a_log "$OUTFILE" "跳過 Robolectric android-all：IntelliJ IDEA 正在執行" "log：Robolectric 因 IntelliJ 跳過"
+fi
+kill "$P5" 2>/dev/null; wait 2>/dev/null; BG_PIDS=""
+
+echo "[org/robolectric 本身是 symlink]"
+setup
+mkdir -p "$SB/elsewhere/rl/android-all-instrumented/16-robolectric-13921718-i7"
+rm -rf "$RL"
+ln -sfn "$SB/elsewhere/rl" "$RL"
+OUTFILE="$SB/apply-rl-link.txt"
+run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 0 "[apply rl symlink] exit 0"
+if any_real_busy gradle_daemon android_studio intellij; then
+    skip "真實機器上 Gradle／Android Studio／IntelliJ 在跑，略過 org/robolectric symlink 斷言"
+else
+    a_exists "$SB/elsewhere/rl/android-all-instrumented/16-robolectric-13921718-i7" "org/robolectric 是 symlink：指向的內容保留"
+    a_log "$OUTFILE" "是 symlink，為安全起見略過：Robolectric android-all" "log：org/robolectric symlink 略過"
+fi
+rm -f "$RL"
 
 finish
