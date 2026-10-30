@@ -109,7 +109,8 @@ Xcode「Settings → Components」刪除。
 | Kotlin/Native | `~/.konan/kotlin-native-prebuilt-*` | 每版約 1 GB（實例 2.50） | KMP 的 Kotlin/Native 工具鏈，每個用過的 Kotlin 版本一份 | 每個架構只留最新版，刪掉舊版本目錄；`dependencies` 保留 | 釘在舊版的專案下次 build 重新下載 | B |
 | Android Studio 舊版快取 | `~/Library/Caches/Google/AndroidStudio<版本>` | 每版數百 MB | 各版 Android Studio 的索引與快取，升級後舊版目錄不會自己消失 | 刪掉沒在用的版本目錄 | 無（舊版已不用） | B |
 | Kotlin LSP 索引 | `~/Library/Caches/JetBrains/IntelliJServer/workspaces` | 每個專案約 200 MB | `kotlin-lsp` 為每個開過的專案建的索引 | 刪除久未開的專案目錄 | 下次打開該專案重建索引 | B（14 天） |
-| Maven 本機套件庫 | `~/.m2/repository` | 數百 MB 起 | Maven／部分 Gradle 專案下載的相依套件，也含 `mvn install` 裝進來的本機套件 | 確認沒有只存在本機的套件後刪除 | 重新下載；本機 install 的套件要重新 build | 不涵蓋 |
+| Robolectric android-all | `~/.m2/repository/org/robolectric/android-all`、`android-all-instrumented` | 每個 SDK 版本約 100–200 MB（實例 395 MB） | Robolectric 測試用的 Android framework jar，每個用到的 SDK 版本一份 | 刪除這兩個目錄 | 下次跑 Robolectric 測試重新下載 | B |
+| Maven 本機套件庫 | `~/.m2/repository` | 數百 MB 起 | Maven／部分 Gradle 專案下載的相依套件，也含 `mvn install` 裝進來的本機套件 | 確認沒有只存在本機的套件後刪除 | 重新下載；本機 install 的套件要重新 build | 不涵蓋（Robolectric android-all 除外） |
 
 **看 AVD 用的是哪個 system-image：**
 

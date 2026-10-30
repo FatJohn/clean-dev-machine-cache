@@ -977,6 +977,26 @@ EOF
     [ "$found" = true ] || log_skip "沒有超過 ${days} 天沒更新的${desc}"
 }
 
+# Robolectric 依 Android SDK 版本下載的 android-all／android-all-instrumented jar（每版約 100–200 MB）。
+#   只刪這兩個 artifact（名稱完全相符）；org/robolectric 底下其他 artifact 與 ~/.m2 的其他套件可能是 mvn install 的本機套件，不碰。
+clean_robolectric_android_all() {
+    local rl="$1" desc="Robolectric android-all" found=false name
+    if [ -L "$rl" ]; then
+        log_skip "是 symlink，為安全起見略過：${desc} — ${rl}"
+        return 0
+    fi
+    if [ ! -d "$rl" ]; then
+        log_skip "不存在，略過：${desc}"
+        return 0
+    fi
+    for name in android-all android-all-instrumented; do
+        [ -e "${rl}/${name}" ] || [ -L "${rl}/${name}" ] || continue
+        found=true
+        clean purge "${rl}/${name}" "${desc} ${name}"
+    done
+    [ "$found" = true ] || log_skip "沒有 android-all，略過：${desc}"
+}
+
 # Kotlin／Android：舊版工具鏈與 IDE 快取，清了只是下次用到時重新下載或重建索引
 tier_b_kotlin_android() {
     skip_if_busy "" "Kotlin/Native 舊版本" gradle_daemon kotlin_daemon android_studio intellij \
@@ -988,6 +1008,10 @@ tier_b_kotlin_android() {
     local ws="${HOME}/Library/Caches/JetBrains/IntelliJServer/workspaces"
     skip_if_busy "$ws" "Kotlin LSP workspace 索引" kotlin_lsp \
         || clean_idle_workspaces "$ws" 14 "Kotlin LSP workspace 索引"
+
+    local rl="${HOME}/.m2/repository/org/robolectric"
+    skip_if_busy "" "Robolectric android-all" gradle_daemon android_studio intellij \
+        || clean_robolectric_android_all "$rl"
 }
 
 run_tier_b() {
