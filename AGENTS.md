@@ -25,6 +25,8 @@
 - `--projects`（`scan_project_dir`）拒絕 `/`、HOME、HOME 的上層與 `~/Library` 底下，掃描時 prune 所有隱藏目錄。
 - 要清的路徑本身是 symlink 就略過，不跟進去、也不刪 symlink 本身（`clean`／`clean_older` 的 `-L` 檢查）。
 - 擁有者 app 在跑時該項直接跳過（`skip_if_busy`／`owner_running`），不等待、不殺 process。
+- D 級（`--include-simulators`）的 iOS 模擬器與 runtime 只經 `xcrun simctl`，不直接刪 `CoreSimulator/Devices`；
+  `simctl list devices` 有 `(Booted)` 或查詢失敗就整項跳過，不關機。
 - Codex 版本名稱由 `codex_kind` 去掉平台後綴後整串比對，認不出來的判成 unknown 一律保留。
   `tier_a_codex_releases` 永遠保留 current 指向的版本與最新版（`codex_newest`；有穩定版時是最新穩定版），
   解析不到 current 就整項略過。

@@ -13,6 +13,7 @@ log 寫在 `~/logs/clean-dev-mac/`。
 ./clean-dev-mac.sh                     # A 級，只報告
 ./clean-dev-mac.sh --include-caches    # A + B 級，只報告
 ./clean-dev-mac.sh --projects ~/Projects --stale-days 60   # A + C 級，只報告
+./clean-dev-mac.sh --include-simulators   # A + D 級，只報告
 ./clean-dev-mac.sh --apply             # 實際清 A 級
 ./clean-dev-mac.sh --apply --include-caches --projects ~/Projects:~/work
 ```
@@ -21,6 +22,7 @@ log 寫在 `~/logs/clean-dev-mac/`。
 |---|---|
 | `--apply` | 真的刪除；沒有這個旗標時只報告 |
 | `--include-caches` | 加跑 B 級 |
+| `--include-simulators` | 加跑 D 級：刪除所有 iOS 模擬器與 Android AVD（含裡面的 app 與資料）、無法使用或已過時的模擬器 runtime |
 | `--projects DIR` | 加跑 C 級；可重複指定，或用冒號分隔多個目錄。DIR 不做 glob 展開；`~`、`/`、`~` 的上層目錄與 `~/Library` 底下會被拒絕（見 C 級） |
 | `--stale-days N` | C 級的門檻天數（預設 30，最小 1）；天數語意見[天數怎麼算](#天數怎麼算) |
 | `-h`, `--help` | 顯示說明 |
@@ -35,15 +37,15 @@ log 寫在 `~/logs/clean-dev-mac/`。
 | `KEEP_LOGS_DAYS` | 30 | log 保留天數，最小 1 |
 | `CODE_SIGN_CLONE_BASE` | `$(dirname $(getconf DARWIN_USER_TEMP_DIR))/X` | Chrome／Edge code_sign_clone 的上層目錄 |
 | `CLAUDE_TMP_DIR` | `/private/tmp/claude-<UID>` | Claude Code 暫存目錄 |
-| `DISABLE_TOOL_COMMANDS` | false | 設為 `true` 時不執行 simctl、brew、npm、pnpm、go、dotnet、`dart pub cache gc` 等外部指令（連 `pnpm store path`、`go env` 這種只查路徑的也不跑），log 記「略過（DISABLE_TOOL_COMMANDS）」；pub cache 改走路徑清理，log 記「DISABLE_TOOL_COMMANDS=true，不執行 dart pub cache gc，改用路徑清理」；找 Flutter SDK 時也只認 `FLUTTER_ROOT`，不看 PATH 與預設安裝位置 |
+| `DISABLE_TOOL_COMMANDS` | false | 設為 `true` 時不執行 simctl、brew、npm、pnpm、go、dotnet、`dart pub cache gc` 等外部指令（連 `pnpm store path`、`go env`、`simctl list devices` 這種只查詢的也不跑），log 記「略過（DISABLE_TOOL_COMMANDS）」；D 級的 iOS 模擬器與 runtime 整項略過（不改成直接刪目錄）；pub cache 改走路徑清理，log 記「DISABLE_TOOL_COMMANDS=true，不執行 dart pub cache gc，改用路徑清理」；找 Flutter SDK 時也只認 `FLUTTER_ROOT`，不看 PATH 與預設安裝位置 |
 | `FLUTTER_ROOT` | 未設 | Flutter SDK 根目錄，B 級會清它的 `bin/cache`。沒設時依序找 PATH 上的 `flutter`、`~/development/flutter`、`~/flutter`、`~/sdk/flutter`、`/opt/flutter`。有設就只用它，驗證不過就不清、也不改找別的位置 |
 | `PUB_CACHE` | `~/.pub-cache` | pub cache 位置；要通過驗證才清（見 B 級說明） |
 
 輸出開頭與結尾都會印 `df -h /` 的可用空間，最後印「可釋放」（dry-run）或「已釋放」（`--apply`）總量。
 dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄大小計，是上限（例如 `pnpm store prune`
-只刪沒被引用的套件）；Homebrew 的量另外印出，不計入總量。
+只刪沒被引用的套件）；Homebrew 的量另外印出，不計入總量；D 級的模擬器 runtime 大小由 simctl 決定，也不計入。
 
-## 三個等級
+## 四個等級
 
 ### A 級：預設就跑，沒有副作用或只是重建成本
 
@@ -60,6 +62,10 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
 | Claude Code 暫存 | `$CLAUDE_TMP_DIR/<專案>/<session>` | 每個專案目錄下超過 7 天的 session | — |
 | Homebrew | — | `brew cleanup --prune=all`（dry-run 用 `-n`） | — |
 | Codex runtime 安裝暫存 | `~/.cache/codex-runtimes/codex-runtime-install-*` | 超過 1 天的才刪 | — |
+| CoreSimulator 快取 | `~/Library/Developer/CoreSimulator/Caches` | 清空內容（dyld shared cache 等，會重建） | Xcode、Simulator |
+| XCTestDevices | `~/Library/Developer/XCTestDevices` | 清空內容（平行測試複製出來的模擬器） | Xcode、Simulator |
+| Interface Builder 快取 | `~/Library/Developer/Xcode/UserData/IB Support` | 整個刪除 | Xcode |
+| 開發工具 log | `~/Library/Logs/JetBrains`、`~/.config/gcloud/logs`、`~/.azure/logs` | 清空內容（只動 log 目錄，設定與憑證不碰） | — |
 | Android 模擬器（AVD） | `~/.android/avd/*.avd` | **只報告**每台的大小，不清 | — |
 | Claude Code 對話紀錄 | `~/.claude/projects` | **只報告**大小，不清 | — |
 | Codex 對話紀錄 | `~/.codex/sessions` | **只報告**大小，不清 | — |
@@ -80,7 +86,7 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
   session，不直接刪整個專案目錄，以免連帶清掉還在跑的 session。判斷依據是 session 目錄本身的 mtime，
   連續跑超過 7 天、期間又沒有在該目錄第一層新增檔案的 session，理論上可能被誤判。
 - **只報告的三項**清了會掉資料或要改設定，所以只印大小：AVD 要縮小用 Android Studio Device Manager 的
-  「Wipe Data」（模擬器內資料會消失）；Claude Code 對話紀錄由 `~/.claude/settings.json` 的 `cleanupPeriodDays`
+  「Wipe Data」（模擬器內資料會消失），整個不要了用 D 級（`--include-simulators`）全部清空；Claude Code 對話紀錄由 `~/.claude/settings.json` 的 `cleanupPeriodDays`
   控制保留天數（預設 30）；Codex 對話紀錄依年／月分目錄，要清就手動刪舊的。
   細節見 [disk-space-knowledge.md 的〈AI 工具〉](disk-space-knowledge.md#ai-工具)。
 
@@ -114,7 +120,23 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 | Kotlin LSP workspace 索引 | 刪除 `~/Library/Caches/JetBrains/IntelliJServer/workspaces` 下整個目錄超過 14 天沒有更新的項目 | 同左 | Kotlin LSP |
 | Robolectric android-all | 刪除 `~/.m2/repository/org/robolectric` 下的 `android-all` 與 `android-all-instrumented`（見表下說明） | 各 artifact 目錄 | Android Studio、Gradle daemon、IntelliJ IDEA |
 | Playwright | **只報告**，不清 | `~/Library/Caches/ms-playwright*` | — |
+| 其他開發工具快取 | 刪除下方清單的路徑（都在 `~` 底下） | 同左 | — |
+| Android SDK／build 快取 | 刪除 `~/.android/cache`、`~/.android/build-cache` | 同左 | Android Studio、Gradle daemon、Android emulator |
+| Android Studio 快取 | 清空 `~/Library/Caches/Google/AndroidStudio*` 中留下來的每一個（舊版本已由上面的「Android Studio 舊版本快取」整個刪除） | 同左 | Android Studio |
+| SwiftPM 全域快取 | 刪除 `~/.cache/swift-package-manager` | 同左 | Xcode |
+| macOS／tvOS／visionOS／xrOS DeviceSupport | 刪除 `~/Library/Developer/Xcode/<平台> DeviceSupport` 下超過 90 天的項目 | 同左 | Xcode |
 
+- **其他開發工具快取**：從 [Mole](https://github.com/tw93/mole) 的 `lib/clean/dev.sh` 挑出開發機用得到、
+  內容只有下載或建置快取的路徑，直接刪路徑（理由同 Yarn：不依賴工具版本）：
+
+  | 類別 | 路徑 |
+  |---|---|
+  | Node／前端 | `.cache/node/corepack`、`.cache/node-gyp`、`.node-gyp`、`.cache/typescript`、`.cache/electron`、`.turbo/cache`、`.vite/cache`、`.cache/vite`、`.cache/webpack`、`.parcel-cache`、`.cache/eslint`、`.cache/prettier` |
+  | Python | `Library/Caches/pip`、`.pyenv/cache`、`.cache/poetry`、`Library/Caches/pypoetry/artifacts`、`Library/Caches/pypoetry/cache`、`.cache/ruff`、`.cache/mypy`、`.pytest_cache` |
+  | Ruby | `.rbenv/cache`、`.gem/specs`、`.bundle/cache` |
+  | Rust | `.rustup/downloads`（toolchains 不碰） |
+  | Expo | `.expo/` 底下的 `expo-go`、`android-apk-cache`、`ios-simulator-app-cache`、`native-modules-cache`、`schema-cache`、`template-cache`、`versions-cache`（`state.json` 有登入資訊，不碰） |
+  | 其他 | `.kube/cache`、`.cache/pre-commit` |
 - **npm**：以前用 `sudo npm`（例如 `sudo npm install -g`）裝過東西時，npm 會以 root 身分把檔案寫進
   `~/.npm`，之後 `npm cache clean --force` 刪到它們就失敗（`EACCES`，npm 自己也會提示 cache 裡有
   root-owned files），其餘檔案照樣刪掉。script 清 npm 前先找 `~/.npm` 底下第一個不屬於你的項目
@@ -180,10 +202,36 @@ DIR 是 `/`、`~`、`~` 的上層目錄（例如 `/Users`），或在 `~/Library
 
 | 找到 | 清什麼 | 什麼時候清 |
 |---|---|---|
-| `pubspec.yaml` | 同層的 `build/` | `build/` 的 mtime 超過 `--stale-days` 天 |
+| `pubspec.yaml` | 同層的 `build/` 與 `.dart_tool` | 各自的 mtime 超過 `--stale-days` 天（分開判斷） |
 | `package.json` | 同層的 `node_modules` | `node_modules/.package-lock.json`（沒有就看 `node_modules` 本身）的 mtime 超過 `--stale-days` 天 |
 
-報告逐項列出路徑和大小。清掉的代價是下次打開那個專案要重新 `flutter build`／`npm install`。
+報告逐項列出路徑和大小。清掉的代價是下次打開那個專案要重新 `flutter build`／`npm install`；
+`.dart_tool` 清掉後 `flutter run`／`flutter pub get` 會重建。`.dart_tool` 是直接檢查專案目錄下的這個名稱，
+不違反「不進隱藏目錄」：掃描時仍不往隱藏目錄裡找專案。
+
+### D 級：`--include-simulators`，所有模擬器（含裡面的 app 與資料）
+
+測試用的模擬器全部刪掉，要用時再建。清掉的是模擬器本身與裡面的 app、登入狀態、測試資料，
+所以另外用旗標開啟，不併進 A、B 級。
+
+| 項目 | 做法 | 擁有者 app |
+|---|---|---|
+| 所有 iOS 模擬器 | `xcrun simctl delete all`（量測 `~/Library/Developer/CoreSimulator/Devices`） | Xcode、Simulator |
+| 無法使用的模擬器 runtime | `xcrun simctl runtime delete --unusable` | Xcode、Simulator |
+| 已有更新版本的模擬器 runtime | `xcrun simctl runtime delete --outdated`（同一個 runtime 識別碼已有更新版本的舊版） | Xcode、Simulator |
+| 所有 Android AVD | 清空 `~/.android/avd`（每台的 `.avd` 目錄與 `.ini`，含快照） | Android Studio、Android emulator |
+| Android system-images | **只報告** `~/Library/Android/sdk/system-images` 的大小 | — |
+
+- iOS 三項由 simctl 執行，不直接刪 `CoreSimulator/Devices` 目錄：模擬器狀態由 CoreSimulator 管，
+  直接刪會讓它的裝置清單與目錄對不上。先跑 `xcrun simctl list devices`，有 `(Booted)` 的模擬器
+  （例如背景的 `xcodebuild test`）或這個查詢失敗時整項跳過，不關機、不刪。
+- 沒有符合條件的 runtime 時 simctl 會以 exit code 2 結束並印 `No matching images found to delete`，script 記成
+  SKIP，不算失敗。其他失敗記 ERROR，最後 exit code 1。
+- 仍可使用、也沒有更新版本的 runtime 不刪：要測哪些 iOS 版本由人決定，手動步驟見
+  [disk-space-knowledge.md 的 Xcode／iOS 一節](disk-space-knowledge.md#xcodeios)。
+- system-images 刪了要重新下載才能建新的 AVD，所以只報告；用 `sdkmanager --uninstall` 手動移除，
+  步驟見 [disk-space-knowledge.md 的 Android 一節](disk-space-knowledge.md#android)。
+- 刪掉後要在 Xcode「Devices and Simulators」或 Android Studio Device Manager 重建模擬器。
 
 ## 安全檢查
 
@@ -200,7 +248,7 @@ DIR 是 `/`、`~`、`~` 的上層目錄（例如 `/Users`），或在 `~/Library
 所有「超過 N 天」都是指 mtime 早於「執行當下往前 N×24 小時」，用 `find -mmin +(N×1440)` 判斷。
 不用 `find -mtime +N`：實測 macOS 的 `-mtime +N` 要超過 N+1 天才命中（`-mtime +1` 要超過 48 小時才命中），比字面多一天。
 適用於 `--stale-days`（最小 1）、`KEEP_LOGS_DAYS`（最小 1）、Claude Code 暫存的 7 天、Codex runtime 安裝暫存的
-1 天、Kotlin LSP workspace 索引的 14 天、iOS／watchOS DeviceSupport 的 90 天。例如 `--stale-days 1` 時，25 小時前的 `build/` 會清、
+1 天、Kotlin LSP workspace 索引的 14 天、各平台 DeviceSupport 的 90 天。例如 `--stale-days 1` 時，25 小時前的 `build/` 會清、
 23 小時前的不會。
 
 ## 擁有者 app 跳過機制
@@ -210,16 +258,16 @@ dry-run 也照樣判斷，會印出「會跳過 X：Y 正在執行」並附上�
 
 | 擁有者 | 判斷方式 | 影響的項目 |
 |---|---|---|
-| Xcode | `pgrep -x Xcode` | DerivedData、Products、Xcode 應用程式快取、simctl、CoreSimulator logs、SwiftPM、iOS／watchOS DeviceSupport |
-| Simulator | `pgrep -x Simulator` | simctl、CoreSimulator logs |
+| Xcode | `pgrep -x Xcode` | DerivedData、Products、Xcode 應用程式快取、simctl、CoreSimulator logs、CoreSimulator 快取、XCTestDevices、Interface Builder 快取、SwiftPM（兩個位置）、各平台 DeviceSupport、D 級的 iOS 模擬器與 runtime |
+| Simulator | `pgrep -x Simulator` | simctl、CoreSimulator logs、CoreSimulator 快取、XCTestDevices、D 級的 iOS 模擬器與 runtime |
 | Google Chrome | `pgrep -x "Google Chrome"` | Chrome code_sign_clone、Chrome 快取 |
 | Microsoft Edge | `pgrep -x "Microsoft Edge"` | Edge code_sign_clone、Edge 快取 |
 | Cursor | `pgrep -x Cursor` | Cursor 快取 |
-| Android Studio | `pgrep -f 'Android Studio[^/]*\.app'`（含 Preview） | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Android Studio 舊版本快取、Robolectric android-all |
-| Gradle daemon | `pgrep -f GradleDaemon` | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Robolectric android-all |
+| Android Studio | `pgrep -f 'Android Studio[^/]*\.app'`（含 Preview） | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Android Studio 舊版本快取、Robolectric android-all、Android SDK／build 快取、Android Studio 快取、D 級的 AVD |
+| Gradle daemon | `pgrep -f GradleDaemon` | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Robolectric android-all、Android SDK／build 快取 |
 | Kotlin compile daemon | `pgrep -f KotlinCompileDaemon` | Kotlin/Native 舊版本 |
 | IntelliJ IDEA | `pgrep -f 'IntelliJ IDEA[^/]*\.app'` | Kotlin/Native 舊版本、Robolectric android-all |
-| Android emulator | `pgrep -f qemu-system` | Gradle caches／daemon／.tmp（所有 Android 相關項目） |
+| Android emulator | `pgrep -f qemu-system` | Gradle caches／daemon／.tmp、Android SDK／build 快取、D 級的 AVD |
 | flutter 指令 | `pgrep -f flutter_tools` | pub cache、Flutter SDK artifacts |
 | Dart analysis server | `pgrep -f 'dart.*(analysis_server\|language-server)'` | pub cache、Flutter SDK artifacts |
 | Kotlin LSP | `pgrep -f 'kotlin-server\|intellij-server'` | Kotlin LSP workspace 索引 |
@@ -237,10 +285,10 @@ analysis server，而它就是從 `bin/cache/dart-sdk` 執行的，也會讀 pub
 | 項目 | 不自動化的理由 |
 |---|---|
 | 垃圾桶 | TCC（隱私權限）會擋，終端機沒有「完整磁碟取用權限」就讀不到 `~/.Trash`；而且清空是使用者的決定 |
-| Android system-images、AVD、NDK | 要判斷哪個 AVD 還在用、專案要哪個 NDK 版本（AVD 只報告大小） |
+| Android system-images、NDK | 刪了要重新下載才能建 AVD／build 原生程式碼，要判斷專案要哪個版本（D 級只報告 system-images 大小）。AVD 預設只報告大小，加 `--include-simulators` 才清 |
 | Claude Code／Codex 對話紀錄 | 刪了就不能 resume 舊 session；Claude Code 有自己的保留天數設定（只報告大小） |
 | `~/Library/Application Support` 底下的 app 資料 | 裡面混著設定、登入狀態與快取，要逐個 app 判斷；見 [application-support.md](application-support.md) |
-| iOS simulator runtime | 要判斷專案還要測哪些 iOS 版本 |
+| 仍可使用且沒有更新版本的 iOS simulator runtime | 要判斷專案還要測哪些 iOS 版本（D 級只刪無法使用與已過時的） |
 | Claude desktop VM（`vm_bundles`） | app 自己管理，刪了下次啟動會重新下載，而且可能正在使用 |
 | Chrome 裝置端 AI 模型 | 要從 Chrome 設定關閉，直接刪會被重新下載 |
 | Docker | 映像與 volume 可能有資料，要用 `docker system df` 看過再決定 |

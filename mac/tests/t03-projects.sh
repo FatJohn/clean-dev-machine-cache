@@ -30,7 +30,20 @@ mkp; OUTFILE="$SB/r.txt"
 run_script "$H" --apply --projects "$P" > "$OUTFILE" 2>&1
 a_eq "$?" 0 "exit 0"
 a_eq "$(left)" 2 "新的 build／node_modules 都保留"
-a_log "$OUTFILE" "底下沒有超過 30 天的 build/ 或 node_modules" "log：沒有可清項目"
+a_log "$OUTFILE" "底下沒有超過 30 天的 build/、.dart_tool 或 node_modules" "log：沒有可清項目"
+
+echo "[Flutter .dart_tool：跟 build/ 一樣看門檻]"
+mkp
+mkdir -p "$P/old dt/.dart_tool/x" "$P/fresh app/.dart_tool/y"; touch "$P/old dt/pubspec.yaml"; old "$P/old dt/.dart_tool"
+mkdir -p "$P/old dt/lib"; touch "$P/old dt/lib/main.dart"; old "$P/old dt/lib"
+OUTFILE="$SB/r.txt"
+run_script "$H" --apply --projects "$P" > "$OUTFILE" 2>&1
+a_eq "$?" 0 "exit 0"
+a_gone "$P/old dt/.dart_tool" "久未更新的 .dart_tool 刪除"
+a_exists "$P/fresh app/.dart_tool/y" "新的 .dart_tool 保留"
+a_exists "$P/old dt/lib/main.dart" "原始碼 lib/ 保留"
+a_exists "$P/old dt/pubspec.yaml" "pubspec.yaml 保留"
+a_log "$OUTFILE" "已清除 Flutter .dart_tool（30 天未更新）" "log：已清除 .dart_tool"
 
 echo "[相對路徑]"
 mkp; mkdir -p "$P/old rel/build"; touch "$P/old rel/pubspec.yaml"; old "$P/old rel/build"
