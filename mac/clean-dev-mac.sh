@@ -1113,6 +1113,10 @@ EOF
 ${OLD_VERSIONS_PURGED}" in *"
 ${d}
 "*) continue ;; esac
+        if [ -L "$d" ]; then
+            log_skip "是 symlink，為安全起見略過：Android Studio 快取 $(basename "$d") — ${d}"
+            continue
+        fi
         skip_if_busy "$d" "Android Studio 快取 $(basename "$d")" android_studio && continue
         for sub in caches index tmp; do
             [ -e "${d}/${sub}" ] || [ -L "${d}/${sub}" ] || continue

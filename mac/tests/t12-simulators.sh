@@ -138,11 +138,31 @@ for who in "launchd_sim:開機中的模擬器（launchd_sim）" "xcodebuild:xcod
     a_log "$OUTFILE" "跳過 XCTestDevices：${label} 正在執行" "log：跳過 XCTestDevices（${label}）"
     : > "$SB/busy"
 done
+for who in "launchd_sim:開機中的模擬器（launchd_sim）" "xcodebuild:xcodebuild"; do
+    pat="${who%%:*}"; label="${who#*:}"
+    echo "[D 級 iOS 模擬器：${pat} 在跑時整項跳過（在 DISABLE_TOOL_COMMANDS 之前判斷）]"
+    echo "$pat" > "$SB/busy"
+    OUTFILE="$SB/d-sim-busy.txt"
+    run_script "$H" --apply --include-simulators > "$OUTFILE" 2>&1
+    a_log "$OUTFILE" "跳過 iOS 模擬器與 runtime：${label} 正在執行" "log：D 級 iOS 跳過（${label}）"
+    a_nolog "$OUTFILE" "略過（DISABLE_TOOL_COMMANDS）：不執行 xcrun simctl list devices" "${label} 在跑：不走到 simctl"
+    : > "$SB/busy"
+done
+
 echo "[A 級 CoreSimulator 快取／XCTestDevices：沒有擁有者在跑時清空]"
 OUTFILE="$SB/a-sim.txt"
 run_script "$H" --apply > "$OUTFILE" 2>&1
 a_empty_dir "$H/Library/Developer/CoreSimulator/Caches" "CoreSimulator 快取清空"
 a_empty_dir "$H/Library/Developer/XCTestDevices" "XCTestDevices 清空"
+
+echo "[Android Studio 版本目錄是 symlink：略過，不清它指到的目錄]"
+rm -rf "${H:?}/Library/Caches/Google"
+mkdir -p "$SB/outside as/caches/c" "$H/Library/Caches/Google"
+ln -s "$SB/outside as" "$H/Library/Caches/Google/AndroidStudio2026.1"
+OUTFILE="$SB/as-link.txt"
+run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
+a_exists "$SB/outside as/caches/c" "symlink 指到的 Android Studio 快取不動"
+a_log "$OUTFILE" "是 symlink，為安全起見略過：Android Studio 快取 AndroidStudio2026.1" "log：Android Studio 版本目錄 symlink 略過"
 
 echo "[AVD 是 symlink：略過]"
 mkavd

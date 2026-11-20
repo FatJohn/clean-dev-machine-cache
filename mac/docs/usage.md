@@ -216,16 +216,16 @@ DIR 是 `/`、`~`、`~` 的上層目錄（例如 `/Users`），或在 `~/Library
 
 | 項目 | 做法 | 擁有者 app |
 |---|---|---|
-| 所有 iOS 模擬器 | `xcrun simctl delete all`（量測 `~/Library/Developer/CoreSimulator/Devices`） | Xcode、Simulator |
-| 無法使用的模擬器 runtime | `xcrun simctl runtime delete --unusable` | Xcode、Simulator |
-| 已有更新版本的模擬器 runtime | `xcrun simctl runtime delete --outdated`（同一個 runtime 識別碼已有更新版本的舊版） | Xcode、Simulator |
+| 所有 iOS 模擬器 | `xcrun simctl delete all`（量測 `~/Library/Developer/CoreSimulator/Devices`） | Xcode、Simulator、開機中的模擬器、xcodebuild |
+| 無法使用的模擬器 runtime | `xcrun simctl runtime delete --unusable` | Xcode、Simulator、開機中的模擬器、xcodebuild |
+| 已有更新版本的模擬器 runtime | `xcrun simctl runtime delete --outdated`（同一個 runtime 識別碼已有更新版本的舊版） | Xcode、Simulator、開機中的模擬器、xcodebuild |
 | 所有 Android AVD | 清空 `~/.android/avd`（每台的 `.avd` 目錄與 `.ini`，含快照） | Android Studio、Android emulator |
 | Android system-images | **只報告** `~/Library/Android/sdk/system-images` 的大小 | — |
 
 - iOS 三項由 simctl 執行，不直接刪 `CoreSimulator/Devices` 目錄：模擬器狀態由 CoreSimulator 管，
   直接刪會讓它的裝置清單與目錄對不上。先跑 `xcrun simctl list devices`，有 `(Booted)`、`(Booting)`、`(Shutting Down)` 的模擬器
   （例如背景的 `xcodebuild test`）或這個查詢失敗時整項跳過，不關機、不刪。執行前也檢查開機中的模擬器（`launchd_sim`）與
-  `xcodebuild` 的 process，命令列開的 headless 模擬器與平行測試的 clone 不會出現在 `simctl list devices`，靠這個擋。
+  `xcodebuild` 的 process：平行測試的 clone 在 XCTestDevices 底下，不會出現在 `simctl list devices`，靠這個擋。
 - 沒有符合條件的 runtime 時 simctl 會以 exit code 2 結束並印 `No matching images found to delete`，script 記成
   SKIP，不算失敗。其他失敗記 ERROR，最後 exit code 1。
 - 仍可使用、也沒有更新版本的 runtime 不刪：要測哪些 iOS 版本由人決定，手動步驟見
