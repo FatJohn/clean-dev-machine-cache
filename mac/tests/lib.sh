@@ -150,6 +150,8 @@ real_busy() {
     case "$1" in
         xcode)          pgrep -x Xcode >/dev/null 2>&1 ;;
         simulator)      pgrep -x Simulator >/dev/null 2>&1 ;;
+        booted_sim)     pgrep -x launchd_sim >/dev/null 2>&1 ;;
+        xcodebuild)     pgrep -x xcodebuild >/dev/null 2>&1 ;;
         chrome)         pgrep -x "Google Chrome" >/dev/null 2>&1 ;;
         edge)           pgrep -x "Microsoft Edge" >/dev/null 2>&1 ;;
         cursor)         pgrep -x Cursor >/dev/null 2>&1 ;;

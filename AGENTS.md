@@ -25,6 +25,9 @@
 - `--projects`（`scan_project_dir`）拒絕 `/`、HOME、HOME 的上層與 `~/Library` 底下，掃描時 prune 所有隱藏目錄。
 - 要清的路徑本身是 symlink 就略過，不跟進去、也不刪 symlink 本身（`clean`／`clean_older` 的 `-L` 檢查）。
 - 擁有者 app 在跑時該項直接跳過（`skip_if_busy`／`owner_running`），不等待、不殺 process。
+- D 級（`--include-simulators`）的 iOS 模擬器與 runtime 只經 `xcrun simctl`，不直接刪 `CoreSimulator/Devices`；
+  `simctl list devices` 有 `(Booted)`／`(Booting)`／`(Shutting Down)` 或查詢失敗就整項跳過，不關機。
+  CoreSimulator 快取、XCTestDevices 與 D 級的 iOS 項目都把 `booted_sim`（`launchd_sim`）與 `xcodebuild` 列為擁有者。
 - Codex 版本名稱由 `codex_kind` 去掉平台後綴後整串比對，認不出來的判成 unknown 一律保留。
   `tier_a_codex_releases` 永遠保留 current 指向的版本與最新版（`codex_newest`；有穩定版時是最新穩定版），
   解析不到 current 就整項略過。
@@ -43,6 +46,9 @@
   UTF-8 locale 下，`$var` 後面直接接全形字元（如 `"（$v）"`、`"$v："`）會讓變數值變亂碼，
   變數後面接非 ASCII 字元時一律寫成 `${var}`。
   迴圈要累加或改寫外層變數（如 `TOTAL_FREED_KB`）時，逐行讀資料用 heredoc 而不是 pipe：pipe 讓 `while` 跑在 subshell，改動會遺失。
+- script 開了 `set -o pipefail`：`printf '%s\n' "$var" | grep -q X` 在輸出大於 pipe buffer（約 64 KB）時，
+  grep 找到就結束、printf 收到 SIGPIPE（141），整條 pipeline 判成失敗。安全判斷（例如有沒有開機中的模擬器）
+  改用 `case "$var" in *X*)` 比對，不經 pipe。
 - `/usr/bin/xcrun` 在 `env -i PATH=/usr/bin:/bin` 下仍然解析得到真實工具，所以一般沙盒靠
   `DISABLE_TOOL_COMMANDS=true` 保護真實機器；檢查外部指令參數的 t10 改用不含 `/usr/bin` 的 PATH，
   開跑前確認每個工具都解析到假工具。

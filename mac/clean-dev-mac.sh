@@ -4,15 +4,16 @@
 #
 # 開發機上隨時可能有人正在用 Xcode／Chrome／Android Studio，所以每個項目都先確認擁有者 app 沒在跑。
 #
-# 預設只報告（dry-run），加 --apply 才真的刪。分三級：
+# 預設只報告（dry-run），加 --apply 才真的刪。分四級：
 #   A 級（預設）            沒有副作用，或只是重建成本
 #   B 級（--include-caches） 套件／瀏覽器／IDE 快取與舊版工具鏈，清了要重新下載或重建
-#   C 級（--projects DIR）   專案內久未動過的 build/ 與 node_modules
+#   C 級（--projects DIR）   專案內久未動過的 build/、.dart_tool 與 node_modules
+#   D 級（--include-simulators） 刪除所有 iOS 模擬器與 Android AVD（含裡面的資料）、無法使用或已過時的模擬器 runtime
 #
 # 忙碌判斷：每個項目宣告自己的「擁有者 app」，該 app 還在跑就逐項跳過，不等待。
 #
-# 刻意不清（手動步驟見 docs/disk-space-knowledge.md）：垃圾桶、Android system-images／AVD／NDK、
-# iOS simulator runtime、Claude desktop VM、Chrome 裝置端 AI 模型、Docker、~/Library/Application Support 的 app 資料、
+# 刻意不清（手動步驟見 docs/disk-space-knowledge.md）：垃圾桶、Android system-images（D 級只報告）／NDK、
+# 仍可使用且沒有更新版本的 iOS simulator runtime、Claude desktop VM、Chrome 裝置端 AI 模型、Docker、~/Library/Application Support 的 app 資料、
 # Time Machine 本機快照、Xcode Archives。
 #
 # Date: 2026-09-24
@@ -42,6 +43,7 @@ DISABLE_TOOL_COMMANDS="${DISABLE_TOOL_COMMANDS:-false}"
 
 DRY_RUN=true
 INCLUDE_CACHES=false
+INCLUDE_SIMULATORS=false
 PROJECT_DIRS=""
 STALE_DAYS=30
 
@@ -57,7 +59,9 @@ usage() {
   --apply              真的刪除
   --include-caches     加跑 B 級：套件管理器、瀏覽器與 IDE 快取、舊版工具鏈
                        （清了會重新下載或重建索引）
-  --projects DIR       加跑 C 級：在 DIR 底下找久未動過的 build/ 與 node_modules
+  --include-simulators 加跑 D 級：刪除所有 iOS 模擬器（xcrun simctl delete all）與 Android AVD，
+                       含模擬器裡的 app 與資料；再刪無法使用或已有更新版本的模擬器 runtime
+  --projects DIR       加跑 C 級：在 DIR 底下找久未動過的 build/、.dart_tool 與 node_modules
                        可重複指定，或用冒號分隔多個目錄
                        拒絕 ~、/、~ 的上層目錄與 ~/Library 底下；隱藏目錄一律不進去
   --stale-days N       C 級的門檻天數（預設 30，最小 1）；「超過 N 天」＝ mtime 早於
@@ -71,6 +75,7 @@ usage() {
                          （預設 $(dirname $(getconf DARWIN_USER_TEMP_DIR))/X）
   CLAUDE_TMP_DIR         Claude Code 暫存目錄（預設 /private/tmp/claude-<UID>）
   DISABLE_TOOL_COMMANDS  設為 true 時不執行 simctl／brew／npm／dart pub cache gc 等外部清理指令
+                         （D 級的 iOS 模擬器與 runtime 整項略過）
                          （pub cache 改用路徑清理），且找 Flutter SDK 時只認 FLUTTER_ROOT
                          （不看 PATH 與預設安裝位置）
   FLUTTER_ROOT           Flutter SDK 根目錄；B 級會清它的 bin/cache。沒設時從 PATH 上的
@@ -105,6 +110,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --apply)          DRY_RUN=false ;;
         --include-caches) INCLUDE_CACHES=true ;;
+        --include-simulators) INCLUDE_SIMULATORS=true ;;
         --projects)
             [ $# -ge 2 ] || { echo "--projects 需要一個目錄參數" >&2; usage; exit 2; }
             add_project_dirs "$2"; shift ;;
@@ -225,6 +231,9 @@ free_space() {
 }
 
 TOTAL_FREED_KB=0
+# keep_newest_versions 這次交給 clean purge 的舊版本路徑（換行分隔）；後面的項目據此避開同一個目錄，
+#   dry-run 時目錄還在，不避開會重複計算大小
+OLD_VERSIONS_PURGED=""
 
 # 防呆：拒絕刪除空字串、根目錄、HOME 本身與 HOME 的上層目錄。
 #   先正規化再比對（//、/.、結尾 /），目錄存在時也比對 symlink 解析後的實體路徑。
@@ -343,6 +352,8 @@ owner_running() {
     case "$1" in
         xcode)          pgrep -x Xcode >/dev/null 2>&1 ;;
         simulator)      pgrep -x Simulator >/dev/null 2>&1 ;;
+        booted_sim)     pgrep -x launchd_sim >/dev/null 2>&1 ;;
+        xcodebuild)     pgrep -x xcodebuild >/dev/null 2>&1 ;;
         chrome)         pgrep -x "Google Chrome" >/dev/null 2>&1 ;;
         edge)           pgrep -x "Microsoft Edge" >/dev/null 2>&1 ;;
         cursor)         pgrep -x Cursor >/dev/null 2>&1 ;;
@@ -362,6 +373,8 @@ owner_label() {
     case "$1" in
         xcode)          echo "Xcode" ;;
         simulator)      echo "Simulator" ;;
+        booted_sim)     echo "開機中的模擬器（launchd_sim）" ;;
+        xcodebuild)     echo "xcodebuild" ;;
         chrome)         echo "Google Chrome" ;;
         edge)           echo "Microsoft Edge" ;;
         cursor)         echo "Cursor" ;;
@@ -499,6 +512,30 @@ tier_a_xcode() {
     local simlogs="${HOME}/Library/Logs/CoreSimulator"
     skip_if_busy "$simlogs" "CoreSimulator logs" xcode simulator \
         || clean empty "$simlogs" "CoreSimulator logs"
+
+    # CoreSimulator 快取與 XCTestDevices 另把 booted_sim、xcodebuild 列為擁有者：命令列的 xcodebuild test、
+    #   simctl boot 開的 headless 模擬器不會有 Xcode／Simulator process，但仍在用這兩個目錄
+    # 以下三項來自 Mole（tw93/mole lib/clean/dev.sh 的 clean_dev_mobile／clean_xcode_xctest_devices），
+    # 都是 Xcode／CoreSimulator 會自己重建的東西
+    local simcache="${HOME}/Library/Developer/CoreSimulator/Caches"
+    skip_if_busy "$simcache" "CoreSimulator 快取" xcode simulator booted_sim xcodebuild \
+        || clean empty "$simcache" "CoreSimulator 快取（dyld shared cache 等，會重建）"
+
+    local xctest="${HOME}/Library/Developer/XCTestDevices"
+    skip_if_busy "$xctest" "XCTestDevices" xcode simulator booted_sim xcodebuild \
+        || clean empty "$xctest" "XCTestDevices（平行測試複製出來的模擬器）"
+
+    local ib="${HOME}/Library/Developer/Xcode/UserData/IB Support"
+    skip_if_busy "$ib" "Interface Builder 快取" xcode \
+        || clean purge "$ib" "Interface Builder 快取"
+}
+
+# 開發工具的 log（來自 Mole：JetBrains 的 clean_dev_jetbrains_logs、clean_dev_cloud 的 gcloud／Azure logs）。
+#   只是 log，刪了不影響任何設定；IDE 開著時被刪的 log 檔它會重開新檔
+tier_a_dev_logs() {
+    clean empty "${HOME}/Library/Logs/JetBrains" "JetBrains IDE logs"
+    clean empty "${HOME}/.config/gcloud/logs"    "Google Cloud CLI logs"
+    clean empty "${HOME}/.azure/logs"            "Azure CLI logs"
 }
 
 # codex_core <目錄名>  去掉平台後綴（-aarch64-apple-darwin、-x86_64-apple-darwin 等 -<arch>-apple-darwin）
@@ -665,6 +702,7 @@ run_tier_a() {
     tier_a_homebrew
     tier_a_codex_runtimes
     tier_a_home_data_report
+    tier_a_dev_logs
 }
 
 # ============================================================
@@ -944,7 +982,9 @@ ${keep}" in
             *"
 ${name}
 "*) log_info "${desc}：保留最新版 ${name}" ;;
-            *) clean purge "${parent}/${name}" "${desc} 舊版本 ${name}" ;;
+            *) clean purge "${parent}/${name}" "${desc} 舊版本 ${name}"
+               OLD_VERSIONS_PURGED="${OLD_VERSIONS_PURGED}${parent}/${name}
+" ;;
         esac
     done <<EOF
 ${list}
@@ -1014,12 +1054,174 @@ tier_b_kotlin_android() {
         || clean_robolectric_android_all "$rl"
 }
 
+# 來自 Mole（tw93/mole lib/clean/dev.sh）的開發工具快取：全部是下載或建置快取，清了會重新下載或重建，
+# 不含設定、憑證或使用者資料。每行「HOME 底下的相對路徑|描述」，直接刪路徑（理由同 Yarn：不依賴工具版本）。
+tier_b_dev_tool_caches() {
+    local rel desc
+    while IFS='|' read -r rel desc; do
+        [ -n "$rel" ] || continue
+        clean purge "${HOME}/${rel}" "$desc"
+    done <<'EOF'
+.cache/node/corepack|Corepack 下載的套件管理器
+.cache/node-gyp|node-gyp 標頭檔快取
+.node-gyp|node-gyp 舊版標頭檔快取
+.cache/typescript|TypeScript 型別定義快取
+.cache/electron|Electron 下載快取
+.turbo/cache|Turborepo 快取
+.vite/cache|Vite 快取
+.cache/vite|Vite 全域快取
+.cache/webpack|webpack 快取
+.parcel-cache|Parcel 快取
+.cache/eslint|ESLint 快取
+.cache/prettier|Prettier 快取
+Library/Caches/pip|pip 快取
+.pyenv/cache|pyenv 下載快取
+.cache/poetry|Poetry 快取
+Library/Caches/pypoetry/artifacts|Poetry artifacts 快取
+Library/Caches/pypoetry/cache|Poetry 套件快取
+.cache/ruff|Ruff 快取
+.cache/mypy|mypy 快取
+.pytest_cache|pytest 快取
+.rbenv/cache|rbenv 下載快取
+.gem/specs|RubyGems spec 快取
+.bundle/cache|Bundler 快取
+.rustup/downloads|rustup 下載快取
+.kube/cache/discovery|kubectl discovery 快取
+.kube/cache/http|kubectl HTTP 快取
+.cache/pre-commit|pre-commit hook 環境快取
+.expo/expo-go|Expo Go 快取
+.expo/android-apk-cache|Expo Android APK 快取
+.expo/ios-simulator-app-cache|Expo iOS 模擬器 app 快取
+.expo/native-modules-cache|Expo native modules 快取
+.expo/schema-cache|Expo schema 快取
+.expo/template-cache|Expo template 快取
+.expo/versions-cache|Expo versions 快取
+EOF
+
+    # Android（Mole 的 clean_dev_mobile）：SDK 下載快取與舊版 AGP 的 build cache；
+    # Android Studio 自己的快取在它開著時會用到，所以宣告擁有者
+    if ! skip_if_busy "${HOME}/.android/cache" "Android SDK／build 快取" android_studio gradle_daemon emulator; then
+        clean purge "${HOME}/.android/cache"       "Android SDK 快取"
+        clean purge "${HOME}/.android/build-cache" "Android build 快取"
+    fi
+    # 舊版本已由 tier_b_kotlin_android 的 keep_newest_versions 整個刪除；留下來的版本只清空可重建的
+    #   caches、index、tmp。同層的 LocalHistory 是 IDE 的本機修改歷史（含未 commit 的改動），無法重建，不碰
+    local d sub
+    for d in "${HOME}"/Library/Caches/Google/AndroidStudio*; do
+        [ -d "$d" ] || continue
+        case "
+${OLD_VERSIONS_PURGED}" in *"
+${d}
+"*) continue ;; esac
+        if [ -L "$d" ]; then
+            log_skip "是 symlink，為安全起見略過：Android Studio 快取 $(basename "$d") — ${d}"
+            continue
+        fi
+        skip_if_busy "$d" "Android Studio 快取 $(basename "$d")" android_studio && continue
+        for sub in caches index tmp; do
+            [ -e "${d}/${sub}" ] || [ -L "${d}/${sub}" ] || continue
+            clean empty "${d}/${sub}" "Android Studio 快取 $(basename "$d")/${sub}"
+        done
+    done
+
+    local spm="${HOME}/.cache/swift-package-manager"
+    skip_if_busy "$spm" "SwiftPM 全域快取" xcode \
+        || clean purge "$spm" "SwiftPM 全域快取"
+
+    # 其他平台的 DeviceSupport（Mole 的 clean_xcode_device_support 涵蓋的平台），規則與 iOS／watchOS 相同
+    local plat ds
+    for plat in macOS tvOS visionOS xrOS; do
+        ds="${HOME}/Library/Developer/Xcode/${plat} DeviceSupport"
+        skip_if_busy "$ds" "${plat} DeviceSupport" xcode \
+            || clean_older "$ds" 90 "${plat} DeviceSupport"
+    done
+}
+
 run_tier_b() {
     log_info "=== B 級：套件、瀏覽器與 IDE 快取（會重新下載或重建） ==="
     tier_b_packages
     tier_b_playwright_report
     tier_b_xcode_browsers
     tier_b_kotlin_android
+    tier_b_dev_tool_caches
+}
+
+# ============================================================
+# D 級：--include-simulators，刪除所有模擬器（含裡面的 app 與資料）
+# ============================================================
+
+# simctl_runtime_delete <選項>  `xcrun simctl runtime delete <選項>`；沒有符合的 runtime 時 simctl 回 2 並印
+#   「No matching images found to delete」，這種情況記 SKIP，不算失敗
+simctl_runtime_delete() {
+    local opt="$1" desc="$2"
+    local cmd_text="xcrun simctl runtime delete ${opt}"
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY-RUN] 會執行 \`${cmd_text}\`（${desc}；大小以 simctl 實際刪除為準，未計入總量）"
+        return 0
+    fi
+    local out nomatch
+    if out=$(xcrun simctl runtime delete "$opt" 2>&1); then
+        printf '%s\n' "$out" >> "${LOG_FILE}"
+        log_info "✓ 已執行 \`${cmd_text}\`（${desc}）"
+    else
+        printf '%s\n' "$out" >> "${LOG_FILE}"
+        case "$out" in *'No matching images found'*) nomatch=true ;; *) nomatch=false ;; esac
+        if [ "$nomatch" = true ]; then
+            log_skip "沒有${desc}，\`${cmd_text}\` 沒有刪任何東西"
+        else
+            log_error "✗ 指令失敗：\`${cmd_text}\`（${desc}），輸出見 ${LOG_FILE}"
+        fi
+    fi
+}
+
+# iOS 模擬器：simctl 管理模擬器狀態，不直接刪 CoreSimulator/Devices 目錄；
+#   有開機中的模擬器（可能是 xcodebuild test 在背景跑）就整項跳過，不關機
+tier_d_ios_simulators() {
+    if ! have xcrun; then
+        log_skip "沒有 xcrun，略過 iOS 模擬器"
+        return 0
+    fi
+    local devices="${HOME}/Library/Developer/CoreSimulator/Devices"
+    skip_if_busy "$devices" "iOS 模擬器與 runtime" xcode simulator booted_sim xcodebuild && return 0
+    tools_disabled "xcrun simctl list devices、xcrun simctl delete all、xcrun simctl runtime delete" && return 0
+
+    local list busy_sim
+    if ! list=$(xcrun simctl list devices 2>>"${LOG_FILE}"); then
+        log_warn "\`xcrun simctl list devices\` 失敗，無法確認有沒有開機中的模擬器，iOS 模擬器整項略過"
+        return 0
+    fi
+    # 不用 printf | grep -q：輸出大於 pipe buffer 時 grep 提早結束，printf 收到 SIGPIPE，
+    #   pipefail 下整條 pipeline 判成「沒找到」，就會刪掉開機中的模擬器
+    case "$list" in
+        *'(Booted)'*|*'(Booting)'*|*'(Shutting Down)'*) busy_sim=true ;;
+        *) busy_sim=false ;;
+    esac
+    if [ "$busy_sim" = true ]; then
+        log_skip "有開機中的 iOS 模擬器，iOS 模擬器與 runtime 整項略過（先關掉模擬器或等測試跑完）"
+        return 0
+    fi
+    run_tool "所有 iOS 模擬器（含裡面的 app 與資料）" "$devices" xcrun simctl delete all
+    simctl_runtime_delete --unusable "無法使用的模擬器 runtime"
+    simctl_runtime_delete --outdated "已有更新版本的模擬器 runtime"
+}
+
+# Android AVD：整個 ~/.android/avd 清空（每台模擬器的 .avd 目錄與 .ini，含快照與模擬器內資料）。
+#   system-images 只報告：刪了要重新下載才能建新的 AVD，留給人用 sdkmanager 處理
+tier_d_android_avd() {
+    local avd="${HOME}/.android/avd"
+    skip_if_busy "$avd" "Android AVD" android_studio emulator \
+        || clean empty "$avd" "Android 模擬器 AVD（含快照與模擬器內資料）"
+
+    local images="${HOME}/Library/Android/sdk/system-images"
+    if [ -d "$images" ]; then
+        log_info "[只報告] Android system-images — $(human "$(dir_kb "$images")") — ${images}（手動移除方式見 docs/disk-space-knowledge.md）"
+    fi
+}
+
+run_tier_d() {
+    log_info "=== D 級：所有模擬器（含裡面的 app 與資料） ==="
+    tier_d_ios_simulators
+    tier_d_android_avd
 }
 
 # ============================================================
@@ -1062,11 +1264,19 @@ scan_project_dir() {
         dir=$(dirname "$manifest")
         case "$(basename "$manifest")" in
             pubspec.yaml)
-                target="${dir}/build"
-                [ -d "$target" ] || continue
-                is_stale "$target" || continue
-                found=true
-                clean purge "$target" "Flutter build（${STALE_DAYS} 天未更新）"
+                # .dart_tool 來自 Mole（lib/clean/caches.sh 的專案快取）：pub get 與 build 產生，flutter run／pub get 會重建
+                for target in "${dir}/build" "${dir}/.dart_tool"; do
+                    [ -d "$target" ] || continue
+                    is_stale "$target" || continue
+                    # pub get／flutter run 只改 .dart_tool 深層的檔案，目錄本身的 mtime 不會跟著變；
+                    #   整棵樹都沒有 N 天內更新的項目才算久未使用
+                    if [ "$(basename "$target")" = .dart_tool ] \
+                        && [ -n "$(find "$target" -mmin "-$(days_to_min "$STALE_DAYS")" -print -quit 2>/dev/null)" ]; then
+                        continue
+                    fi
+                    found=true
+                    clean purge "$target" "Flutter $(basename "$target")（${STALE_DAYS} 天未更新）"
+                done
                 ;;
             package.json)
                 target="${dir}/node_modules"
@@ -1082,11 +1292,11 @@ scan_project_dir() {
 $(find "$root" -mindepth 1 -maxdepth 4 \( -name '.*' -o -name node_modules -o -name build -o -name Pods \) -prune \
     -o \( -name pubspec.yaml -o -name package.json \) -type f -print 2>/dev/null)
 EOF
-    [ "$found" = true ] || log_skip "${root} 底下沒有超過 ${STALE_DAYS} 天的 build/ 或 node_modules"
+    [ "$found" = true ] || log_skip "${root} 底下沒有超過 ${STALE_DAYS} 天的 build/、.dart_tool 或 node_modules"
 }
 
 run_tier_c() {
-    log_info "=== C 級：專案內久未動過的 build/ 與 node_modules ==="
+    log_info "=== C 級：專案內久未動過的 build/、.dart_tool 與 node_modules ==="
     # 用 read -a 切冒號：不經過 pathname expansion，--projects "~/p*" 這類參數不會被 glob 展開
     local dirs=() d
     IFS=':' read -r -a dirs <<< "$PROJECT_DIRS"
@@ -1124,6 +1334,13 @@ else
 fi
 log_blank
 
+if [ "$INCLUDE_SIMULATORS" = true ]; then
+    run_tier_d
+else
+    log_skip "=== D 級：未指定 --include-simulators，略過 ==="
+fi
+log_blank
+
 # 本 script 自己的 log：只刪符合命名的舊檔；dry-run 只報告
 if [ "$DRY_RUN" = true ]; then
     old_logs=$(find "${LOG_DIR}" -maxdepth 1 -name 'clean-dev-mac-*.log' -type f -mmin "+$(days_to_min "$KEEP_LOGS_DAYS")" 2>/dev/null | wc -l | tr -d ' ')
@@ -1133,9 +1350,9 @@ else
 fi
 
 if [ "$DRY_RUN" = true ]; then
-    log_info "可釋放（估計；官方指令項目以目錄大小計，為上限；brew 未計入）：$(human "$TOTAL_FREED_KB")"
+    log_info "可釋放（估計；官方指令項目以目錄大小計，為上限；brew 與模擬器 runtime 未計入）：$(human "$TOTAL_FREED_KB")"
 else
-    log_info "已釋放（依目錄前後大小計；brew 未計入）：$(human "$TOTAL_FREED_KB")"
+    log_info "已釋放（依目錄前後大小計；brew 與模擬器 runtime 未計入）：$(human "$TOTAL_FREED_KB")"
 fi
 log_info "結束後磁碟 /：$(free_space)"
 log_info "log：${LOG_FILE}"

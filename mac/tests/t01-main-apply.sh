@@ -29,6 +29,11 @@ old "$SB/claude tmp/proj a/old sess" "$SB/claude tmp/proj b/old2"
 CR="$H/.cache/codex-runtimes"
 mkdir -p "$CR/codex-runtime-install-old" "$CR/codex-runtime-install-new" "$CR/other-old"
 old "$CR/codex-runtime-install-old" "$CR/other-old"
+mkdir -p "$H/Library/Developer/CoreSimulator/Caches/dyld/x" "$H/Library/Developer/CoreSimulator/Devices/keep-dev" \
+    "$H/Library/Developer/XCTestDevices/AB-CD/data" "$H/Library/Developer/Xcode/UserData/IB Support/s" \
+    "$H/Library/Developer/Xcode/UserData/xcschemes" "$H/Library/Logs/JetBrains/IntelliJ" "$H/.config/gcloud/logs/2026" \
+    "$H/.azure/logs/a"
+touch "$H/.config/gcloud/credentials.db" "$H/.azure/azureProfile.json"
 
 # ---- B 級 ----
 mkdir -p "$H/.npm/_logs" "$H/.npm/_cacache/x" "$H/Library/Caches/Yarn/y" "$H/.yarn/berry/cache/z" "$H/.bun/install/cache/b"
@@ -45,6 +50,14 @@ DS="$H/Library/Developer/Xcode/iOS DeviceSupport"
 mkdir -p "$DS/old 1" "$DS/new 1"; old "$DS/old 1"
 mkdir -p "$H/Library/Caches/Google/Chrome/cc" "$H/Library/Caches/Microsoft Edge/ec" "$H/Library/Caches/Cursor/cu" \
     "$H/Library/Caches/ms-playwright/chromium-1000" "$H/Library/Caches/ms-playwright/chromium-1100"
+# Mole 對照補進來的快取（抽樣：清單迴圈、Android、SwiftPM 全域快取、其他平台 DeviceSupport）
+mkdir -p "$H/.cache/node/corepack/pnpm" "$H/Library/Caches/pip/http" "$H/.expo/expo-go/x" "$H/.rustup/downloads/d" \
+    "$H/.rustup/toolchains/stable" "$H/.android/cache/c" "$H/.android/build-cache/b" "$H/.android/avd/Pixel.avd" \
+    "$H/Library/Caches/Google/AndroidStudio2025.1/caches/i" "$H/Library/Caches/Google/AndroidStudio2025.1/LocalHistory/h" \
+    "$H/.cache/swift-package-manager/s" "$H/.kube/cache/discovery/d" "$H/.kube/cache/oidc-login/t"
+echo token > "$H/.expo/state.json"; echo k > "$H/.android/adbkey"
+TDS="$H/Library/Developer/Xcode/tvOS DeviceSupport"
+mkdir -p "$TDS/old t" "$TDS/new t"; old "$TDS/old t"
 
 # ---- C 級 ----
 PR="$SB/projects"
@@ -90,6 +103,16 @@ a_exists "$SB/claude tmp/proj b" "Claude 暫存專案目錄本身保留"
 a_gone "$CR/codex-runtime-install-old" "codex-runtime-install 舊暫存刪除"
 a_exists "$CR/codex-runtime-install-new" "codex-runtime-install 新暫存保留"
 a_exists "$CR/other-old" "不符合命名的舊目錄保留"
+a_cleaned empty "$H/Library/Developer/CoreSimulator/Caches" "CoreSimulator 快取" xcode simulator booted_sim xcodebuild
+a_exists "$H/Library/Developer/CoreSimulator/Devices/keep-dev" "A 級不碰 CoreSimulator/Devices"
+a_cleaned empty "$H/Library/Developer/XCTestDevices" "XCTestDevices" xcode simulator booted_sim xcodebuild
+a_cleaned gone "$H/Library/Developer/Xcode/UserData/IB Support" "Interface Builder 快取" xcode
+a_exists "$H/Library/Developer/Xcode/UserData/xcschemes" "Xcode UserData 的其他內容保留"
+a_empty_dir "$H/Library/Logs/JetBrains" "JetBrains IDE logs 清空"
+a_empty_dir "$H/.config/gcloud/logs" "gcloud logs 清空"
+a_exists "$H/.config/gcloud/credentials.db" "gcloud 憑證保留"
+a_empty_dir "$H/.azure/logs" "Azure CLI logs 清空"
+a_exists "$H/.azure/azureProfile.json" "Azure 設定保留"
 
 echo "[B 級]"
 a_exists "$H/.npm/_cacache/x" "npm _cacache 保留（DISABLE 下不跑 npm cache clean）"
@@ -135,6 +158,28 @@ a_cleaned empty "$H/Library/Caches/Microsoft Edge" "Edge 快取" edge
 a_cleaned empty "$H/Library/Caches/Cursor" "Cursor 快取" cursor
 a_exists "$H/Library/Caches/ms-playwright/chromium-1000" "Playwright 只報告不刪"
 a_log "$OUTFILE" "[只報告] Playwright 舊 revision：chromium-1000" "log：Playwright 舊 revision 只報告"
+a_gone "$H/.cache/node/corepack" "Corepack 快取刪除"
+a_gone "$H/Library/Caches/pip" "pip 快取刪除"
+a_gone "$H/.expo/expo-go" "Expo Go 快取刪除"
+a_exists "$H/.expo/state.json" "Expo state.json（登入資訊）保留"
+a_gone "$H/.rustup/downloads" "rustup 下載快取刪除"
+a_exists "$H/.rustup/toolchains/stable" "rustup toolchains 保留"
+if any_real_busy android_studio gradle_daemon emulator; then
+    a_exists "$H/.android/cache/c" "真實機器上 Android 擁有者在跑，Android SDK 快取保留"
+    a_log "$OUTFILE" "跳過 Android SDK／build 快取：" "log：Android SDK 快取跳過"
+else
+    a_gone "$H/.android/cache" "Android SDK 快取刪除"
+    a_gone "$H/.android/build-cache" "Android build 快取刪除"
+fi
+a_cleaned empty "$H/Library/Caches/Google/AndroidStudio2025.1/caches" "Android Studio 快取 AndroidStudio2025.1" android_studio
+a_exists "$H/Library/Caches/Google/AndroidStudio2025.1/LocalHistory/h" "Android Studio LocalHistory 保留"
+a_gone "$H/.kube/cache/discovery" "kubectl discovery 快取刪除"
+a_exists "$H/.kube/cache/oidc-login/t" "kubelogin token 保留"
+a_exists "$H/.android/avd/Pixel.avd" "B 級不碰 AVD"
+a_exists "$H/.android/adbkey" "adbkey 保留"
+a_cleaned gone "$H/.cache/swift-package-manager" "SwiftPM 全域快取" xcode
+a_cleaned gone "$TDS/old t" "tvOS DeviceSupport" xcode
+a_exists "$TDS/new t" "tvOS DeviceSupport 90 天內保留"
 
 echo "[C 級]"
 a_gone "$PR/app one/build" "久未更新的 Flutter build 刪除"

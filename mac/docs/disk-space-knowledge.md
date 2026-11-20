@@ -73,11 +73,15 @@ diskutil apfs listSnapshots /                # 另一種看法
 | Products | `~/Library/Developer/Xcode/Products` | 實測 3.0 MB | Xcode 產生的 build 產物 | 刪除 | 下次 build 重新產生 | A |
 | Xcode 應用程式快取 | `~/Library/Caches/com.apple.dt.Xcode` | 實測 980 KB | Xcode 自己的快取 | 刪除 | Xcode 重建 | A |
 | 失效模擬器 | `~/Library/Developer/CoreSimulator/Devices` | 實例 4.51（全部模擬器） | runtime 已移除的模擬器 | `xcrun simctl delete unavailable` | 無 | A |
+| 所有模擬器 | `~/Library/Developer/CoreSimulator/Devices` | 同上 | 每台模擬器的系統資料、裝的 app 與 app 資料 | `xcrun simctl delete all` | 模擬器要在 Xcode「Devices and Simulators」重建，裡面的 app 與資料全失 | D |
+| CoreSimulator 使用者快取 | `~/Library/Developer/CoreSimulator/Caches` | 數百 MB 到數 GB | 模擬器的 dyld shared cache 等 | 清空內容 | 下次開模擬器重建，第一次開機較慢 | A |
+| XCTestDevices | `~/Library/Developer/XCTestDevices` | 每次平行測試可累積數 GB | 平行測試時複製出來的模擬器 | 清空內容 | 下次平行測試重新複製 | A |
+| Interface Builder 快取 | `~/Library/Developer/Xcode/UserData/IB Support` | 數十 MB | IB 的 render 快取 | 刪除 | Xcode 重建 | A |
 | CoreSimulator logs | `~/Library/Logs/CoreSimulator` | 數十 MB | 模擬器 log | 清空內容 | 無 | A |
-| iOS／watchOS DeviceSupport | `~/Library/Developer/Xcode/iOS DeviceSupport`、`watchOS DeviceSupport` | 每個 OS 版本數 GB | 接實機時抽出的 symbol | 刪掉舊版本目錄 | 再接該版本的實機要重新抽 | B（90 天） |
-| SwiftPM 快取 | `~/Library/Caches/org.swift.swiftpm` | 1 GB 上下 | 套件 clone | 刪除 | 重新 resolve | B |
+| DeviceSupport | `~/Library/Developer/Xcode/<平台> DeviceSupport`（iOS、watchOS、macOS、tvOS、visionOS、xrOS） | 每個 OS 版本數 GB | 接實機時抽出的 symbol | 刪掉舊版本目錄 | 再接該版本的實機要重新抽 | B（90 天） |
+| SwiftPM 快取 | `~/Library/Caches/org.swift.swiftpm`、`~/.cache/swift-package-manager` | 1 GB 上下 | 套件 clone | 刪除 | 重新 resolve | B |
 | CocoaPods 快取 | `~/Library/Caches/CocoaPods` | 數百 MB | pod 下載快取 | 刪除，或 `pod cache clean --all` | 重新下載 | B |
-| simulator runtime | `/System/Library/AssetsV2/com_apple_MobileAsset_iOSSimulatorRuntime`（新版 Xcode）或 `/Library/Developer/CoreSimulator` | 每個 7–9 GB（實例合計 16.02） | 各 iOS 版本的模擬器系統映像 | 見下方 | 要測該版本時重新下載 | 不涵蓋 |
+| simulator runtime | `/System/Library/AssetsV2/com_apple_MobileAsset_iOSSimulatorRuntime`（新版 Xcode）或 `/Library/Developer/CoreSimulator` | 每個 7–9 GB（實例合計 16.02） | 各 iOS 版本的模擬器系統映像 | 見下方 | 要測該版本時重新下載 | D（只刪 `--unusable`、`--outdated`） |
 | CoreSimulator Caches | `/Library/Developer/CoreSimulator/Caches` | 實例 3.53 | dyld shared cache 等 | 刪掉對應 runtime 時一起消失 | — | 不涵蓋 |
 | Archives | `~/Library/Developer/Xcode/Archives` | 每個數百 MB | 上架用的封存與 dSYM | Xcode Organizer 裡逐個刪 | 失去該版本的 crash symbolication | 不涵蓋 |
 
@@ -94,20 +98,23 @@ Xcode「Settings → Components」刪除。
 
 `simctl runtime delete` 會把該 runtime 上執行中的模擬器強制關機，刪之前先用 `xcrun simctl list devices`
 確認沒有 `Booted` 的。刪掉之後要再用，`xcodebuild -downloadPlatform iOS` 可以重新下載。
+D 級（`--include-simulators`）只跑 `simctl runtime delete --unusable`（無法使用的）與 `--outdated`
+（同一個 runtime 識別碼已有更新版本的），其他版本要不要留由人決定，用上面的指令手動刪。
 
 ## Android
 
 | 項目 | 路徑 | 典型大小 | 是什麼 | 怎麼清 | 代價 | script |
 |---|---|---|---|---|---|---|
-| system-images | `~/Library/Android/sdk/system-images` | 每個 2–8 GB（實例 21.56） | emulator 的系統映像 | `sdkmanager --uninstall` | 建該版本的 AVD 要重新下載 | 不涵蓋 |
-| AVD | `~/.android/avd/*.avd` | 每台數 GB（實例兩台 18.61） | 模擬器的使用者資料與快照；`userdata-qemu.img.qcow2` 隨模擬器內安裝的 app 與資料長大，刪檔後不會縮回 | 不用的 AVD：Device Manager 刪除，或 `avdmanager delete avd -n <名稱>`；還要用的：Device Manager 的「Wipe Data」 | 模擬器內資料全失 | A 只報告 |
-| AVD 快照 | `~/.android/avd/<名稱>.avd/snapshots/default_boot/ram.bin` | 約等於模擬器 RAM（實例各約 3.8） | Quick Boot 用的記憶體快照 | 刪 `snapshots/default_boot`，或 AVD 設定改成 Cold Boot | 下次開機變慢 | 不涵蓋 |
+| system-images | `~/Library/Android/sdk/system-images` | 每個 2–8 GB（實例 21.56） | emulator 的系統映像 | `sdkmanager --uninstall` | 建該版本的 AVD 要重新下載 | D 級只報告大小 |
+| AVD | `~/.android/avd/*.avd` | 每台數 GB（實例兩台 18.61） | 模擬器的使用者資料與快照；`userdata-qemu.img.qcow2` 隨模擬器內安裝的 app 與資料長大，刪檔後不會縮回 | 不用的 AVD：Device Manager 刪除，或 `avdmanager delete avd -n <名稱>`；還要用的：Device Manager 的「Wipe Data」 | 模擬器內資料全失 | A 只報告；D 清空整個 `~/.android/avd` |
+| AVD 快照 | `~/.android/avd/<名稱>.avd/snapshots/default_boot/ram.bin` | 約等於模擬器 RAM（實例各約 3.8） | Quick Boot 用的記憶體快照 | 刪 `snapshots/default_boot`，或 AVD 設定改成 Cold Boot | 下次開機變慢 | D（隨 AVD 一起刪） |
+| Android SDK／build 快取 | `~/.android/cache`、`~/.android/build-cache` | 數百 MB | sdkmanager 下載快取、舊版 AGP 的 build cache | 刪除 | 重新下載或重建 | B |
 | NDK | `~/Library/Android/sdk/ndk/<版本>` | 每版 2–3 GB（實例 4 版 10.56） | 原生編譯工具鏈 | `sdkmanager --uninstall "ndk;<版本>"` | 需要該版本的專案會重新下載 | 不涵蓋 |
 | Gradle caches | `~/.gradle/caches` | 10 GB 以上很常見（實例 14.80） | 依賴、transform、build cache，舊版 Gradle 的目錄不會自己消失 | 刪除 `~/.gradle/caches` | 下次 build 重新下載 | B |
 | Gradle daemon log／暫存 | `~/.gradle/daemon`、`~/.gradle/.tmp` | 實測 daemon 9.2 MB | daemon 的 log 與暫存 | 刪除 | 無 | B |
 | Gradle wrapper | `~/.gradle/wrapper/dists` | 每版約 200 MB（實例 1.74） | 各版 Gradle 本體 | 刪掉沒在用的版本目錄 | 用到時重新下載 | 不涵蓋（script 刻意保留；`~/.gradle/gradle.properties` 常含 signing 設定，也保留） |
 | Kotlin/Native | `~/.konan/kotlin-native-prebuilt-*` | 每版約 1 GB（實例 2.50） | KMP 的 Kotlin/Native 工具鏈，每個用過的 Kotlin 版本一份 | 每個架構只留最新版，刪掉舊版本目錄；`dependencies` 保留 | 釘在舊版的專案下次 build 重新下載 | B |
-| Android Studio 舊版快取 | `~/Library/Caches/Google/AndroidStudio<版本>` | 每版數百 MB | 各版 Android Studio 的索引與快取，升級後舊版目錄不會自己消失 | 刪掉沒在用的版本目錄 | 無（舊版已不用） | B |
+| Android Studio 快取 | `~/Library/Caches/Google/AndroidStudio<版本>` | 每版數百 MB 到數 GB | 各版 Android Studio 的索引與快取，升級後舊版目錄不會自己消失 | 舊版本目錄整個刪掉；每組留下的最新版只清空 `caches`、`index`、`tmp`（`LocalHistory` 是本機修改歷史，不碰） | 舊版無；最新版下次開 IDE 重建 index | B |
 | Kotlin LSP 索引 | `~/Library/Caches/JetBrains/IntelliJServer/workspaces` | 每個專案約 200 MB | `kotlin-lsp` 為每個開過的專案建的索引 | 刪除久未開的專案目錄 | 下次打開該專案重建索引 | B（14 天） |
 | Robolectric android-all | `~/.m2/repository/org/robolectric/android-all`、`android-all-instrumented` | 每個 SDK 版本約 100–200 MB（實例 395 MB） | Robolectric 測試用的 Android framework jar，每個用到的 SDK 版本一份 | 刪除這兩個目錄 | 下次跑 Robolectric 測試重新下載 | B |
 | Maven 本機套件庫 | `~/.m2/repository` | 數百 MB 起 | Maven／部分 Gradle 專案下載的相依套件，也含 `mvn install` 裝進來的本機套件 | 確認沒有只存在本機的套件後刪除 | 重新下載；本機 install 的套件要重新 build | 不涵蓋（Robolectric android-all 除外） |
@@ -135,7 +142,7 @@ $SDK/cmdline-tools/latest/bin/sdkmanager --uninstall "ndk;26.3.11579264"
 | 項目 | 路徑 | 典型大小 | 是什麼 | 怎麼清 | 代價 | script |
 |---|---|---|---|---|---|---|
 | 專案 `build/` | `<專案>/build` | 單一專案可達數 GB（實例最大 4.61） | 各平台 build 產物 | `flutter clean`，或刪除 | 下次 build 從頭來 | C |
-| `.dart_tool` | `<專案>/.dart_tool` | 數百 MB | 套件設定與產生的檔案 | `flutter clean` | 要重跑 `pub get` | 不涵蓋 |
+| `.dart_tool` | `<專案>/.dart_tool` | 數百 MB | 套件設定與產生的檔案 | `flutter clean` | 要重跑 `pub get` | C（久未更新的） |
 | pub cache | `~/.pub-cache`（或 `$PUB_CACHE`） | 1–3 GB（實例 1.46） | 下載的套件 | `dart pub cache gc --force` 只刪沒被引用的套件；或刪除 `hosted`、`hosted-hashes`、`git`。兩者都另清 `.tmp`、`_temp`，保留 `bin` 與 `global_packages`（`dart pub cache clean -f` 會連 `pub global` 裝的工具一起清掉） | gc：只有被刪的套件要重新下載；刪路徑：每個專案要重新 `pub get` | B（有 `dart` 且未設 `DISABLE_TOOL_COMMANDS=true` 時跑 gc，否則刪路徑） |
 | analysis server 快取 | `~/.dartServer` | 1–5 GB（實例 1.62） | IDE 分析快取 | 刪除 | IDE 第一次開專案較慢 | B |
 | SDK artifacts | `$FLUTTER_ROOT/bin/cache` | 數 GB（實測 3.42） | 各平台 engine 與內含的 Dart SDK | 刪除 `bin/cache`，下次執行 `flutter` 會自動重新下載（也可手動 `flutter precache`） | 重新下載 | B（`DISABLE_TOOL_COMMANDS=true` 時只認 `FLUTTER_ROOT`） |
@@ -200,7 +207,7 @@ Playwright 會記錄哪些安裝還在用哪個 revision，`npx playwright insta
 
 | 項目 | 路徑 | 怎麼清 | 代價 | script |
 |---|---|---|---|---|
-| pip cache | `~/Library/Caches/pip` | `pip cache purge` | 重新下載 | 不涵蓋 |
+| pip cache | `~/Library/Caches/pip` | `pip cache purge` | 重新下載 | B |
 | uv cache | `~/.cache/uv` | `uv cache clean` | 重新下載 | 不涵蓋 |
 | 虛擬環境 | `<專案>/.venv`、`venv` | 刪除後重建 | 要重新安裝依賴 | 不涵蓋 |
 | `__pycache__` | 到處都是 | `find . -name __pycache__ -prune -exec rm -rf {} +` | 無 | 不涵蓋 |
@@ -280,12 +287,12 @@ script 不涵蓋：volume 裡可能有資料，一定要先看過 `docker system
 | | Claude desktop `vm_bundles`（`rootfs.img` 8.93） | 11.24 | 手動 |
 | | Claude desktop Cache | 1.17 | 手動 |
 | Android | `~/Library/Android/sdk` 合計 | 35.41 | — |
-| | system-images（android-33 8.17、android-37.2-beta3 8.16、37.0 2.89、36.1 2.34；只有 33 與 37.2-beta3 有 AVD 在用） | 21.56 | 手動 |
+| | system-images（android-33 8.17、android-37.2-beta3 8.16、37.0 2.89、36.1 2.34；只有 33 與 37.2-beta3 有 AVD 在用） | 21.56 | 手動（D 級只報告） |
 | | NDK（4 版） | 10.56 | 手動 |
-| | AVD（兩台，各有約 3.8 的 snapshot `ram.bin`） | 18.61 | 手動 |
-| Xcode／iOS | iOS simulator runtime（AssetsV2） | 16.02 | 手動 |
+| | AVD（兩台，各有約 3.8 的 snapshot `ram.bin`） | 18.61 | D |
+| Xcode／iOS | iOS simulator runtime（AssetsV2） | 16.02 | D（僅無法使用／已過時的），其餘手動 |
 | | `/Library/Developer/CoreSimulator/Caches` | 3.53 | 手動 |
-| | CoreSimulator Devices | 4.51 | A（僅失效的） |
+| | CoreSimulator Devices | 4.51 | A（僅失效的）；D（全部） |
 | | DerivedData | 3.47 | A |
 | 套件快取 | `~/Library/Caches` 合計（go-build 2.13、ms-playwright 2.13、ms-playwright-mcp 1.56、Edge 2.01、Cursor 1.83、pnpm 1.69） | 17.90 | B（部分） |
 | | Gradle caches（含舊版 9.3.1 的 1.85） | 14.80 | B |

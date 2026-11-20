@@ -179,7 +179,7 @@ preflight_flutter() {
 calls() { cut -f 1,2 "$CALLS" | tr '\t' ' '; }
 dart_count() { grep -c "^dart	" "$CALLS"; }
 
-XCODE_BUSY=false; any_real_busy xcode simulator && XCODE_BUSY=true
+XCODE_BUSY=false; any_real_busy xcode simulator booted_sim xcodebuild && XCODE_BUSY=true
 FLUTTER_BUSY=false; any_real_busy flutter_tool dart_analyzer && FLUTTER_BUSY=true
 
 echo "[dry-run：只有查詢型呼叫]"
@@ -308,6 +308,115 @@ for pc in "$H" "$H/"; do
     a_exists "$H/hosted/h" "PUB_CACHE='$pc'：~/hosted 保留"
 done
 
+
+echo "[D 級 --include-simulators：iOS 模擬器的 xcrun 呼叫]"
+# 假 xcrun（XPATH 目錄）：照樣記到 calls.log；`simctl list devices` 回 $SB/sim-list 的內容（SIM_LIST_RC 檔決定 exit code），
+# `simctl runtime delete` 依 $SB/rt-mode：ok → exit 0；nomatch → 印 simctl 實際的訊息、exit 2；fail → exit 1
+SIMX="$SB/simx"
+mkdir -p "$SIMX"
+cat > "$SIMX/xcrun" <<EOS
+#!/bin/bash
+printf '%s\t%s\tPUB_CACHE=%s\n' xcrun "\$*" "\${PUB_CACHE-<unset>}" >> '$CALLS'
+case "\$*" in
+    'simctl list devices')
+        cat '$SB/sim-list'
+        exit "\$(cat '$SB/sim-list-rc')" ;;
+    'simctl runtime delete '*)
+        case "\$(cat '$SB/rt-mode')" in
+            ok) exit 0 ;;
+            nomatch) echo 'No matching images found to delete'; exit 2 ;;
+            *) echo 'simctl error' >&2; exit 1 ;;
+        esac ;;
+esac
+exit 0
+EOS
+chmod +x "$SIMX/xcrun"
+printf '%s\n' '== Devices ==' '-- iOS 26.0 --' '    iPhone 17 (11111111-2222-3333-4444-555555555555) (Shutdown)' > "$SB/sim-list"
+echo 0 > "$SB/sim-list-rc"
+echo ok > "$SB/rt-mode"
+SIM_CMDS="xcrun simctl list devices
+xcrun simctl delete all
+xcrun simctl runtime delete --unusable
+xcrun simctl runtime delete --outdated"
+if [ "$XCODE_BUSY" = true ]; then
+    skip "真實機器上 Xcode／Simulator 在跑，D 級 iOS 模擬器整項跳過，略過 xcrun 呼叫斷言"
+else
+    OUTFILE="$SB/sim-dry.txt"
+    XPATH="$SIMX" run_tools --include-simulators > "$OUTFILE" 2>&1
+    a_eq "$?" 0 "dry-run exit 0"
+    a_eq "$(calls)" "brew cleanup -n --prune=all
+xcrun simctl list devices" "dry-run：只有查詢型呼叫（brew -n、simctl list devices）"
+    a_log "$OUTFILE" "[DRY-RUN] 會執行 \`xcrun simctl delete all\` 清除 所有 iOS 模擬器（含裡面的 app 與資料）" "dry-run 列出 simctl delete all"
+    a_log "$OUTFILE" "[DRY-RUN] 會執行 \`xcrun simctl runtime delete --unusable\`" "dry-run 列出 runtime delete --unusable"
+    a_log "$OUTFILE" "[DRY-RUN] 會執行 \`xcrun simctl runtime delete --outdated\`" "dry-run 列出 runtime delete --outdated"
+
+    OUTFILE="$SB/sim-apply.txt"
+    XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+    XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+    a_eq "$?" 0 "apply exit 0"
+    a_eq "$(calls)" "xcrun simctl delete unavailable
+brew cleanup --prune=all
+${SIM_CMDS}" "apply：simctl 呼叫與參數完全相符"
+    a_log "$OUTFILE" "已執行 \`xcrun simctl delete all\`" "log：已執行 delete all"
+    a_log "$OUTFILE" "已執行 \`xcrun simctl runtime delete --outdated\`" "log：已執行 runtime delete --outdated"
+
+    echo "[有開機中的模擬器：不刪任何模擬器與 runtime]"
+    printf '%s\n' '== Devices ==' '    iPhone 17 (11111111-2222-3333-4444-555555555555) (Booted)' > "$SB/sim-list"
+    OUTFILE="$SB/sim-booted.txt"
+    XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+    XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+    a_eq "$?" 0 "exit 0"
+    a_eq "$(calls | grep -c -e 'delete all' -e 'runtime delete')" 0 "Booted：沒有 delete all／runtime delete"
+    a_log "$OUTFILE" "有開機中的 iOS 模擬器，iOS 模擬器與 runtime 整項略過" "log：Booted 跳過"
+
+    echo "[開機中的模擬器在大量輸出的第一行：不因 SIGPIPE 漏判]"
+    { echo '== Devices =='; echo '    iPhone 17 (11111111-2222-3333-4444-555555555555) (Booted)'
+      i=0; while [ "$i" -lt 3000 ]; do echo "    iPhone 17 Pro Max ($i-AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE) (Shutdown)"; i=$((i + 1)); done
+    } > "$SB/sim-list"
+    a_eq "$([ "$(wc -c < "$SB/sim-list")" -gt 200000 ] && echo big)" big "假 list 輸出超過 200 KB（大於 pipe buffer）"
+    OUTFILE="$SB/sim-booted-big.txt"
+    XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+    XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+    a_eq "$(calls | grep -c -e 'delete all' -e 'runtime delete')" 0 "大量輸出＋Booted：沒有 delete all／runtime delete"
+    a_log "$OUTFILE" "有開機中的 iOS 模擬器，iOS 模擬器與 runtime 整項略過" "log：大量輸出時 Booted 仍跳過"
+
+    for st in Booting "Shutting Down"; do
+        echo "[模擬器狀態 ${st}：不刪]"
+        printf '%s\n' '== Devices ==' "    iPhone 17 (11111111-2222-3333-4444-555555555555) (${st})" > "$SB/sim-list"
+        OUTFILE="$SB/sim-state.txt"
+        XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+        XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+        a_eq "$(calls | grep -c -e 'delete all' -e 'runtime delete')" 0 "${st}：沒有 delete all／runtime delete"
+    done
+
+    echo "[simctl list devices 失敗：不刪]"
+    printf '%s\n' '== Devices ==' > "$SB/sim-list"; echo 1 > "$SB/sim-list-rc"
+    OUTFILE="$SB/sim-listfail.txt"
+    XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+    XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+    a_eq "$?" 0 "exit 0"
+    a_eq "$(calls | grep -c -e 'delete all' -e 'runtime delete')" 0 "list 失敗：沒有 delete all／runtime delete"
+    a_log "$OUTFILE" "[WARN] \`xcrun simctl list devices\` 失敗" "log：list 失敗 WARN"
+    echo 0 > "$SB/sim-list-rc"
+
+    echo "[runtime delete 沒有符合的 runtime（exit 2）：SKIP，不算失敗]"
+    echo nomatch > "$SB/rt-mode"
+    OUTFILE="$SB/sim-nomatch.txt"
+    XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+    XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+    a_eq "$?" 0 "nomatch：exit 0"
+    a_nolog "$OUTFILE" "[ERROR]" "nomatch：沒有 ERROR"
+    a_log "$OUTFILE" "沒有無法使用的模擬器 runtime，\`xcrun simctl runtime delete --unusable\` 沒有刪任何東西" "log：--unusable 沒有符合的 runtime"
+    a_log "$OUTFILE" "沒有已有更新版本的模擬器 runtime，\`xcrun simctl runtime delete --outdated\` 沒有刪任何東西" "log：--outdated 沒有符合的 runtime"
+
+    echo "[runtime delete 失敗：ERROR、exit 1]"
+    echo fail > "$SB/rt-mode"
+    OUTFILE="$SB/sim-rtfail.txt"
+    XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+    XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+    a_eq "$?" 1 "runtime delete 失敗：exit 1"
+    a_log "$OUTFILE" "[ERROR] ✗ 指令失敗：\`xcrun simctl runtime delete --unusable\`" "log：runtime delete 失敗 ERROR"
+fi
 
 echo "[~/.npm 有不屬於目前使用者的檔案：印出 chown 提示]"
 # 假 id：-u／-g 回傳別的 uid／gid，其他參數交給真的 id。沙盒裡的檔案都屬於真實 uid，

@@ -56,6 +56,13 @@ if any_real_busy gradle_daemon kotlin_daemon android_studio intellij; then
 else
     a_log "$OUTFILE" "[DRY-RUN] 會清除 Kotlin/Native 工具鏈 舊版本 kotlin-native-prebuilt-macos-aarch64-1.9.23" "dry-run log：列出舊 Kotlin/Native"
 fi
+if any_real_busy android_studio; then
+    skip "真實機器上 Android Studio 在跑，略過 dry-run 的 Android Studio 快取 log 斷言"
+else
+    # 舊版本只由 keep_newest_versions 整個刪一次；tier_b_dev_tool_caches 只清空留下來的版本，不重複列出（大小不重複計算）
+    a_log "$OUTFILE" "[DRY-RUN] 會清除 Android Studio 快取 舊版本 AndroidStudio2024.3.2" "dry-run log：舊 Android Studio 快取整個刪除"
+    a_nolog "$OUTFILE" "會清除 Android Studio 快取 AndroidStudio2024.3.2" "dry-run log：舊 Android Studio 快取不再列為清空"
+fi
 
 echo "[apply]"
 OUTFILE="$SB/apply.txt"
@@ -86,7 +93,7 @@ if any_real_busy android_studio; then
     a_exists "$G/AndroidStudio2024.3.2" "擁有者在跑：舊 Android Studio 快取保留"
 else
     a_gone "$G/AndroidStudio2024.3.2" "Android Studio 2024.3.2 快取刪除"
-    a_exists "$G/AndroidStudio2026.1.1" "Android Studio 最新版快取保留"
+    a_exists "$G/AndroidStudio2026.1.1/c" "Android Studio 最新版快取保留（只清 caches／index／tmp，t12 驗）"
     a_exists "$G/AndroidStudioPreview2026.1" "Preview 是另一組，最新版保留"
     a_gone "$G/AndroidStudioPreview2025.3" "Preview 舊版刪除"
 fi
