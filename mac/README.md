@@ -52,7 +52,7 @@ log 寫在 `~/logs/clean-dev-mac/`（可用 `LOG_DIR` 覆寫），`--apply` 時�
 | 等級 | 旗標 | 清什麼 | 代價 |
 |---|---|---|---|
 | A | 預設 | Chrome／Edge code_sign_clone、Xcode DerivedData／Products／應用程式快取、失效模擬器、CoreSimulator logs、Codex CLI 舊版本、Claude Code 舊 session 暫存、Homebrew（`brew cleanup --prune=all`）、Codex runtime 安裝暫存、CoreSimulator 快取、XCTestDevices、Interface Builder 快取、JetBrains／gcloud／Azure CLI 的 log；AVD、Claude Code／Codex 對話紀錄只報告大小 | 沒有副作用，或只是重建成本 |
-| B | `--include-caches` | npm、pnpm、Yarn、Bun、Go、.NET、Gradle、CocoaPods、SwiftPM（兩個位置）、pub cache、Flutter SDK artifacts、Dart analysis server、各平台舊的 DeviceSupport、Chrome／Edge／Cursor 快取、Kotlin/Native 的舊版本、Android Studio 快取（舊版本整個刪、最新版清空）、Android SDK／build 快取、久未使用的 Kotlin LSP 索引、Robolectric 下載的 android-all、Corepack／node-gyp／pip／Poetry／Expo 等開發工具快取；Playwright 只報告 | 下次用到時重新下載 |
+| B | `--include-caches` | npm、pnpm、Yarn、Bun、Go、.NET、Gradle、CocoaPods、SwiftPM（兩個位置）、pub cache、Flutter SDK artifacts、Dart analysis server、各平台舊的 DeviceSupport、Chrome／Edge／Cursor 快取、Kotlin/Native 的舊版本、Android Studio 快取（舊版本整個刪、最新版只清 `caches`／`index`／`tmp`）、Android SDK／build 快取、久未使用的 Kotlin LSP 索引、Robolectric 下載的 android-all、Corepack／node-gyp／pip／Poetry／Expo 等開發工具快取；Playwright 只報告 | 下次用到時重新下載 |
 | C | `--projects DIR` | DIR 底下久未動過（`--stale-days`，預設 30 天）的 Flutter `build/`、`.dart_tool` 與 `node_modules` | 下次打開專案要重新 build／install |
 | D | `--include-simulators` | 所有 iOS 模擬器（`simctl delete all`，有開機中的就整項跳過）、無法使用或已過時的模擬器 runtime、所有 Android AVD；system-images 只報告 | 模擬器與裡面的 app、資料全失，要用時重建 |
 

@@ -62,8 +62,8 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
 | Claude Code 暫存 | `$CLAUDE_TMP_DIR/<專案>/<session>` | 每個專案目錄下超過 7 天的 session | — |
 | Homebrew | — | `brew cleanup --prune=all`（dry-run 用 `-n`） | — |
 | Codex runtime 安裝暫存 | `~/.cache/codex-runtimes/codex-runtime-install-*` | 超過 1 天的才刪 | — |
-| CoreSimulator 快取 | `~/Library/Developer/CoreSimulator/Caches` | 清空內容（dyld shared cache 等，會重建） | Xcode、Simulator |
-| XCTestDevices | `~/Library/Developer/XCTestDevices` | 清空內容（平行測試複製出來的模擬器） | Xcode、Simulator |
+| CoreSimulator 快取 | `~/Library/Developer/CoreSimulator/Caches` | 清空內容（dyld shared cache 等，會重建） | Xcode、Simulator、開機中的模擬器、xcodebuild |
+| XCTestDevices | `~/Library/Developer/XCTestDevices` | 清空內容（平行測試複製出來的模擬器） | Xcode、Simulator、開機中的模擬器、xcodebuild |
 | Interface Builder 快取 | `~/Library/Developer/Xcode/UserData/IB Support` | 整個刪除 | Xcode |
 | 開發工具 log | `~/Library/Logs/JetBrains`、`~/.config/gcloud/logs`、`~/.azure/logs` | 清空內容（只動 log 目錄，設定與憑證不碰） | — |
 | Android 模擬器（AVD） | `~/.android/avd/*.avd` | **只報告**每台的大小，不清 | — |
@@ -122,7 +122,7 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 | Playwright | **只報告**，不清 | `~/Library/Caches/ms-playwright*` | — |
 | 其他開發工具快取 | 刪除下方清單的路徑（都在 `~` 底下） | 同左 | — |
 | Android SDK／build 快取 | 刪除 `~/.android/cache`、`~/.android/build-cache` | 同左 | Android Studio、Gradle daemon、Android emulator |
-| Android Studio 快取 | 清空 `~/Library/Caches/Google/AndroidStudio*` 中留下來的每一個（舊版本已由上面的「Android Studio 舊版本快取」整個刪除） | 同左 | Android Studio |
+| Android Studio 快取 | `~/Library/Caches/Google/AndroidStudio*` 中留下來的每一個，清空其中的 `caches`、`index`、`tmp`（舊版本已由上面的「Android Studio 舊版本快取」整個刪除；`LocalHistory` 是 IDE 的本機修改歷史，無法重建，不碰） | 各版本目錄 | Android Studio |
 | SwiftPM 全域快取 | 刪除 `~/.cache/swift-package-manager` | 同左 | Xcode |
 | macOS／tvOS／visionOS／xrOS DeviceSupport | 刪除 `~/Library/Developer/Xcode/<平台> DeviceSupport` 下超過 90 天的項目 | 同左 | Xcode |
 
@@ -136,7 +136,7 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
   | Ruby | `.rbenv/cache`、`.gem/specs`、`.bundle/cache` |
   | Rust | `.rustup/downloads`（toolchains 不碰） |
   | Expo | `.expo/` 底下的 `expo-go`、`android-apk-cache`、`ios-simulator-app-cache`、`native-modules-cache`、`schema-cache`、`template-cache`、`versions-cache`（`state.json` 有登入資訊，不碰） |
-  | 其他 | `.kube/cache`、`.cache/pre-commit` |
+  | 其他 | `.kube/cache/discovery`、`.kube/cache/http`（`.kube/cache` 底下其他目錄可能是 kubelogin 等 credential plugin 的 token，不碰）、`.cache/pre-commit` |
 - **npm**：以前用 `sudo npm`（例如 `sudo npm install -g`）裝過東西時，npm 會以 root 身分把檔案寫進
   `~/.npm`，之後 `npm cache clean --force` 刪到它們就失敗（`EACCES`，npm 自己也會提示 cache 裡有
   root-owned files），其餘檔案照樣刪掉。script 清 npm 前先找 `~/.npm` 底下第一個不屬於你的項目
@@ -202,7 +202,7 @@ DIR 是 `/`、`~`、`~` 的上層目錄（例如 `/Users`），或在 `~/Library
 
 | 找到 | 清什麼 | 什麼時候清 |
 |---|---|---|
-| `pubspec.yaml` | 同層的 `build/` 與 `.dart_tool` | 各自的 mtime 超過 `--stale-days` 天（分開判斷） |
+| `pubspec.yaml` | 同層的 `build/` 與 `.dart_tool` | 分開判斷：`build/` 的 mtime 超過 `--stale-days` 天；`.dart_tool` 本身的 mtime 超過，且裡面沒有任何項目在 `--stale-days` 天內更新（pub get、flutter run 只改深層檔案，目錄本身的 mtime 不會跟著變） |
 | `package.json` | 同層的 `node_modules` | `node_modules/.package-lock.json`（沒有就看 `node_modules` 本身）的 mtime 超過 `--stale-days` 天 |
 
 報告逐項列出路徑和大小。清掉的代價是下次打開那個專案要重新 `flutter build`／`npm install`；
@@ -223,8 +223,9 @@ DIR 是 `/`、`~`、`~` 的上層目錄（例如 `/Users`），或在 `~/Library
 | Android system-images | **只報告** `~/Library/Android/sdk/system-images` 的大小 | — |
 
 - iOS 三項由 simctl 執行，不直接刪 `CoreSimulator/Devices` 目錄：模擬器狀態由 CoreSimulator 管，
-  直接刪會讓它的裝置清單與目錄對不上。先跑 `xcrun simctl list devices`，有 `(Booted)` 的模擬器
-  （例如背景的 `xcodebuild test`）或這個查詢失敗時整項跳過，不關機、不刪。
+  直接刪會讓它的裝置清單與目錄對不上。先跑 `xcrun simctl list devices`，有 `(Booted)`、`(Booting)`、`(Shutting Down)` 的模擬器
+  （例如背景的 `xcodebuild test`）或這個查詢失敗時整項跳過，不關機、不刪。執行前也檢查開機中的模擬器（`launchd_sim`）與
+  `xcodebuild` 的 process，命令列開的 headless 模擬器與平行測試的 clone 不會出現在 `simctl list devices`，靠這個擋。
 - 沒有符合條件的 runtime 時 simctl 會以 exit code 2 結束並印 `No matching images found to delete`，script 記成
   SKIP，不算失敗。其他失敗記 ERROR，最後 exit code 1。
 - 仍可使用、也沒有更新版本的 runtime 不刪：要測哪些 iOS 版本由人決定，手動步驟見
@@ -260,6 +261,8 @@ dry-run 也照樣判斷，會印出「會跳過 X：Y 正在執行」並附上�
 |---|---|---|
 | Xcode | `pgrep -x Xcode` | DerivedData、Products、Xcode 應用程式快取、simctl、CoreSimulator logs、CoreSimulator 快取、XCTestDevices、Interface Builder 快取、SwiftPM（兩個位置）、各平台 DeviceSupport、D 級的 iOS 模擬器與 runtime |
 | Simulator | `pgrep -x Simulator` | simctl、CoreSimulator logs、CoreSimulator 快取、XCTestDevices、D 級的 iOS 模擬器與 runtime |
+| 開機中的模擬器 | `pgrep -x launchd_sim`（每台開機中的模擬器各有一個，含 headless 與平行測試的 clone） | CoreSimulator 快取、XCTestDevices、D 級的 iOS 模擬器與 runtime |
+| xcodebuild | `pgrep -x xcodebuild` | CoreSimulator 快取、XCTestDevices、D 級的 iOS 模擬器與 runtime |
 | Google Chrome | `pgrep -x "Google Chrome"` | Chrome code_sign_clone、Chrome 快取 |
 | Microsoft Edge | `pgrep -x "Microsoft Edge"` | Edge code_sign_clone、Edge 快取 |
 | Cursor | `pgrep -x Cursor` | Cursor 快取 |

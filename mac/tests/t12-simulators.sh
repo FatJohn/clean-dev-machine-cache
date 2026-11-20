@@ -81,7 +81,8 @@ done
 
 mkandroid_cache() {
     rm -rf "${H:?}/.android/cache" "${H:?}/.android/build-cache" "${H:?}/Library/Caches/Google"
-    mkdir -p "$H/.android/cache/c" "$H/.android/build-cache/b" "$H/Library/Caches/Google/AndroidStudio2025.1/i" \
+    mkdir -p "$H/.android/cache/c" "$H/.android/build-cache/b" "$H/Library/Caches/Google/AndroidStudio2025.1/caches/i" "$H/Library/Caches/Google/AndroidStudio2025.1/index/x" "$H/Library/Caches/Google/AndroidStudio2025.1/tmp/t" \
+        "$H/Library/Caches/Google/AndroidStudio2025.1/LocalHistory/changes" "$H/Library/Caches/Google/AndroidStudio2025.1/plugins/p" \
         "$H/Library/Caches/Google/AndroidStudio2024.3/o"
 }
 
@@ -92,7 +93,8 @@ run_script "$H" --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "exit 0"
 a_count "$OUTFILE" "AndroidStudio2024.3" 1 "dry-run：舊版本 AndroidStudio2024.3 只出現一次"
 a_log "$OUTFILE" "[DRY-RUN] 會清除 Android Studio 快取 舊版本 AndroidStudio2024.3 — " "dry-run：舊版本列為整個刪除"
-a_log "$OUTFILE" "[DRY-RUN] 會清除 Android Studio 快取 AndroidStudio2025.1 — " "dry-run：最新版列為清空"
+a_log "$OUTFILE" "[DRY-RUN] 會清除 Android Studio 快取 AndroidStudio2025.1/caches — " "dry-run：最新版的 caches 列為清空"
+a_nolog "$OUTFILE" "LocalHistory" "dry-run：LocalHistory 不列入"
 a_exists "$H/Library/Caches/Google/AndroidStudio2024.3/o" "dry-run：舊版本還在"
 
 echo "[B 級 Android 快取：擁有者沒在跑時清掉（同一個假 pgrep，不受真實機器影響）]"
@@ -102,7 +104,11 @@ run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "exit 0"
 a_gone "$H/.android/cache" "Android SDK 快取刪除"
 a_gone "$H/.android/build-cache" "Android build 快取刪除"
-a_empty_dir "$H/Library/Caches/Google/AndroidStudio2025.1" "Android Studio 最新版快取清空"
+a_empty_dir "$H/Library/Caches/Google/AndroidStudio2025.1/caches" "Android Studio 最新版 caches 清空"
+a_empty_dir "$H/Library/Caches/Google/AndroidStudio2025.1/index" "Android Studio 最新版 index 清空"
+a_empty_dir "$H/Library/Caches/Google/AndroidStudio2025.1/tmp" "Android Studio 最新版 tmp 清空"
+a_exists "$H/Library/Caches/Google/AndroidStudio2025.1/LocalHistory/changes" "Android Studio LocalHistory（本機修改歷史）保留"
+a_exists "$H/Library/Caches/Google/AndroidStudio2025.1/plugins/p" "Android Studio 其他子目錄保留"
 a_gone "$H/Library/Caches/Google/AndroidStudio2024.3" "Android Studio 舊版本快取整個刪除"
 a_nolog "$OUTFILE" "[ERROR]" "沒有 ERROR"
 a_exists "$H/.android/avd/Pixel 6.ini" "B 級不碰 AVD"
@@ -114,11 +120,29 @@ echo "Android Studio[^/]*" > "$SB/busy"
 OUTFILE="$SB/b-android-busy.txt"
 run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_exists "$H/.android/cache/c" "Android Studio 在跑：Android SDK 快取保留"
-a_exists "$H/Library/Caches/Google/AndroidStudio2025.1/i" "Android Studio 在跑：Android Studio 快取保留"
+a_exists "$H/Library/Caches/Google/AndroidStudio2025.1/caches/i" "Android Studio 在跑：Android Studio 快取保留"
 a_exists "$H/Library/Caches/Google/AndroidStudio2024.3/o" "Android Studio 在跑：舊版本快取保留"
 a_log "$OUTFILE" "跳過 Android SDK／build 快取：Android Studio 正在執行" "log：跳過 Android SDK／build 快取"
 a_log "$OUTFILE" "跳過 Android Studio 快取 AndroidStudio2025.1：Android Studio 正在執行" "log：跳過 Android Studio 快取"
 : > "$SB/busy"
+
+for who in "launchd_sim:開機中的模擬器（launchd_sim）" "xcodebuild:xcodebuild"; do
+    pat="${who%%:*}"; label="${who#*:}"
+    echo "[A 級 CoreSimulator 快取／XCTestDevices：${pat} 在跑時跳過（命令列的 xcodebuild test、headless 模擬器）]"
+    mkdir -p "$H/Library/Developer/CoreSimulator/Caches/dyld/x" "$H/Library/Developer/XCTestDevices/AB-CD/data"
+    echo "$pat" > "$SB/busy"
+    OUTFILE="$SB/a-sim-busy.txt"
+    run_script "$H" --apply > "$OUTFILE" 2>&1
+    a_exists "$H/Library/Developer/CoreSimulator/Caches/dyld/x" "${label} 在跑：CoreSimulator 快取保留"
+    a_exists "$H/Library/Developer/XCTestDevices/AB-CD/data" "${label} 在跑：XCTestDevices 保留"
+    a_log "$OUTFILE" "跳過 XCTestDevices：${label} 正在執行" "log：跳過 XCTestDevices（${label}）"
+    : > "$SB/busy"
+done
+echo "[A 級 CoreSimulator 快取／XCTestDevices：沒有擁有者在跑時清空]"
+OUTFILE="$SB/a-sim.txt"
+run_script "$H" --apply > "$OUTFILE" 2>&1
+a_empty_dir "$H/Library/Developer/CoreSimulator/Caches" "CoreSimulator 快取清空"
+a_empty_dir "$H/Library/Developer/XCTestDevices" "XCTestDevices 清空"
 
 echo "[AVD 是 symlink：略過]"
 mkavd

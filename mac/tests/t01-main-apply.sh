@@ -53,7 +53,8 @@ mkdir -p "$H/Library/Caches/Google/Chrome/cc" "$H/Library/Caches/Microsoft Edge/
 # Mole 對照補進來的快取（抽樣：清單迴圈、Android、SwiftPM 全域快取、其他平台 DeviceSupport）
 mkdir -p "$H/.cache/node/corepack/pnpm" "$H/Library/Caches/pip/http" "$H/.expo/expo-go/x" "$H/.rustup/downloads/d" \
     "$H/.rustup/toolchains/stable" "$H/.android/cache/c" "$H/.android/build-cache/b" "$H/.android/avd/Pixel.avd" \
-    "$H/Library/Caches/Google/AndroidStudio2025.1/i" "$H/.cache/swift-package-manager/s"
+    "$H/Library/Caches/Google/AndroidStudio2025.1/caches/i" "$H/Library/Caches/Google/AndroidStudio2025.1/LocalHistory/h" \
+    "$H/.cache/swift-package-manager/s" "$H/.kube/cache/discovery/d" "$H/.kube/cache/oidc-login/t"
 echo token > "$H/.expo/state.json"; echo k > "$H/.android/adbkey"
 TDS="$H/Library/Developer/Xcode/tvOS DeviceSupport"
 mkdir -p "$TDS/old t" "$TDS/new t"; old "$TDS/old t"
@@ -102,9 +103,9 @@ a_exists "$SB/claude tmp/proj b" "Claude 暫存專案目錄本身保留"
 a_gone "$CR/codex-runtime-install-old" "codex-runtime-install 舊暫存刪除"
 a_exists "$CR/codex-runtime-install-new" "codex-runtime-install 新暫存保留"
 a_exists "$CR/other-old" "不符合命名的舊目錄保留"
-a_cleaned empty "$H/Library/Developer/CoreSimulator/Caches" "CoreSimulator 快取" xcode simulator
+a_cleaned empty "$H/Library/Developer/CoreSimulator/Caches" "CoreSimulator 快取" xcode simulator booted_sim xcodebuild
 a_exists "$H/Library/Developer/CoreSimulator/Devices/keep-dev" "A 級不碰 CoreSimulator/Devices"
-a_cleaned empty "$H/Library/Developer/XCTestDevices" "XCTestDevices" xcode simulator
+a_cleaned empty "$H/Library/Developer/XCTestDevices" "XCTestDevices" xcode simulator booted_sim xcodebuild
 a_cleaned gone "$H/Library/Developer/Xcode/UserData/IB Support" "Interface Builder 快取" xcode
 a_exists "$H/Library/Developer/Xcode/UserData/xcschemes" "Xcode UserData 的其他內容保留"
 a_empty_dir "$H/Library/Logs/JetBrains" "JetBrains IDE logs 清空"
@@ -170,7 +171,10 @@ else
     a_gone "$H/.android/cache" "Android SDK 快取刪除"
     a_gone "$H/.android/build-cache" "Android build 快取刪除"
 fi
-a_cleaned empty "$H/Library/Caches/Google/AndroidStudio2025.1" "Android Studio 快取 AndroidStudio2025.1" android_studio
+a_cleaned empty "$H/Library/Caches/Google/AndroidStudio2025.1/caches" "Android Studio 快取 AndroidStudio2025.1" android_studio
+a_exists "$H/Library/Caches/Google/AndroidStudio2025.1/LocalHistory/h" "Android Studio LocalHistory 保留"
+a_gone "$H/.kube/cache/discovery" "kubectl discovery 快取刪除"
+a_exists "$H/.kube/cache/oidc-login/t" "kubelogin token 保留"
 a_exists "$H/.android/avd/Pixel.avd" "B 級不碰 AVD"
 a_exists "$H/.android/adbkey" "adbkey 保留"
 a_cleaned gone "$H/.cache/swift-package-manager" "SwiftPM 全域快取" xcode

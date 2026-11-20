@@ -179,7 +179,7 @@ preflight_flutter() {
 calls() { cut -f 1,2 "$CALLS" | tr '\t' ' '; }
 dart_count() { grep -c "^dart	" "$CALLS"; }
 
-XCODE_BUSY=false; any_real_busy xcode simulator && XCODE_BUSY=true
+XCODE_BUSY=false; any_real_busy xcode simulator booted_sim xcodebuild && XCODE_BUSY=true
 FLUTTER_BUSY=false; any_real_busy flutter_tool dart_analyzer && FLUTTER_BUSY=true
 
 echo "[dry-run：只有查詢型呼叫]"
@@ -368,6 +368,26 @@ ${SIM_CMDS}" "apply：simctl 呼叫與參數完全相符"
     a_eq "$?" 0 "exit 0"
     a_eq "$(calls | grep -c -e 'delete all' -e 'runtime delete')" 0 "Booted：沒有 delete all／runtime delete"
     a_log "$OUTFILE" "有開機中的 iOS 模擬器，iOS 模擬器與 runtime 整項略過" "log：Booted 跳過"
+
+    echo "[開機中的模擬器在大量輸出的第一行：不因 SIGPIPE 漏判]"
+    { echo '== Devices =='; echo '    iPhone 17 (11111111-2222-3333-4444-555555555555) (Booted)'
+      i=0; while [ "$i" -lt 3000 ]; do echo "    iPhone 17 Pro Max ($i-AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE) (Shutdown)"; i=$((i + 1)); done
+    } > "$SB/sim-list"
+    a_eq "$([ "$(wc -c < "$SB/sim-list")" -gt 200000 ] && echo big)" big "假 list 輸出超過 200 KB（大於 pipe buffer）"
+    OUTFILE="$SB/sim-booted-big.txt"
+    XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+    XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+    a_eq "$(calls | grep -c -e 'delete all' -e 'runtime delete')" 0 "大量輸出＋Booted：沒有 delete all／runtime delete"
+    a_log "$OUTFILE" "有開機中的 iOS 模擬器，iOS 模擬器與 runtime 整項略過" "log：大量輸出時 Booted 仍跳過"
+
+    for st in Booting "Shutting Down"; do
+        echo "[模擬器狀態 ${st}：不刪]"
+        printf '%s\n' '== Devices ==' "    iPhone 17 (11111111-2222-3333-4444-555555555555) (${st})" > "$SB/sim-list"
+        OUTFILE="$SB/sim-state.txt"
+        XPATH="$SIMX" preflight_flutter none --apply --include-simulators
+        XPATH="$SIMX" run_tools --apply --include-simulators > "$OUTFILE" 2>&1
+        a_eq "$(calls | grep -c -e 'delete all' -e 'runtime delete')" 0 "${st}：沒有 delete all／runtime delete"
+    done
 
     echo "[simctl list devices 失敗：不刪]"
     printf '%s\n' '== Devices ==' > "$SB/sim-list"; echo 1 > "$SB/sim-list-rc"
