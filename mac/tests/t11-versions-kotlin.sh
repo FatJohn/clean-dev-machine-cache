@@ -1,6 +1,7 @@
 #!/bin/bash
-# B 級的 Kotlin／Android 項目：keep_newest_versions 每組前綴只留最新版（.konan、Android Studio 快取），
+# B 級的 Kotlin／Android 項目：keep_newest_versions 每組前綴只留最新版（.konan），
 # 認不出版本的名稱（含 -RC1、-Beta2 這類結尾是數字的預發行版）與 symlink 一律保留；擁有者在跑時跳過。
+# Android Studio 快取不分新舊版本，每個版本都只清 caches／index／tmp（t12 驗），不整個刪舊版本（LocalHistory 無法重建）。
 # Kotlin LSP workspace 索引只清整個目錄 14 天內都沒有更新的，LSP 在跑時整項跳過。
 # Robolectric 只清 ~/.m2 的 android-all 與 android-all-instrumented，其他 artifact 與 symlink 保留；擁有者在跑時跳過。
 # 以及 A 級的只報告項目（AVD、Claude Code／Codex 對話紀錄）不刪任何東西。
@@ -25,7 +26,7 @@ setup() {
         "$K/kotlin-native-prebuilt-macos-aarch64-2.2.0-dev-1234/bin" "$K/kotlin-native-prebuilt-macos-aarch64-2.2.0-dev-1300/bin" \
         "$K/dependencies/llvm" "$SB/elsewhere/kotlin-native-prebuilt-macos-aarch64-0.9.0"
     ln -sfn "$SB/elsewhere/kotlin-native-prebuilt-macos-aarch64-0.9.0" "$K/kotlin-native-prebuilt-macos-aarch64-0.9.0"
-    mkdir -p "$G/AndroidStudio2024.3.2/c" "$G/AndroidStudio2026.1.1/c" "$G/AndroidStudioPreview2026.1/c" "$G/AndroidStudioPreview2025.3/c" "$G/DriveFS/c"
+    mkdir -p "$G/AndroidStudio2024.3.2/c" "$G/AndroidStudio2026.1.1/c" "$G/AndroidStudioPreview2026.1/c" "$G/AndroidStudioPreview2025.3/c" "$G/AndroidStudioPreview2025.3/caches/x" "$G/DriveFS/c"
     # old：整個目錄 15 天沒動；recent：深層檔案 13 天前更新；deep：只有深層檔案今天更新，第一層目錄是 30 天前
     mkdir -p "$WS/old/index/kotlin-server" "$WS/recent/index/kotlin-server" "$WS/deep/index/kotlin-server"
     touch "$WS/old/index/kotlin-server/f" "$WS/recent/index/kotlin-server/f" "$WS/deep/index/kotlin-server/f"
@@ -56,13 +57,7 @@ if any_real_busy gradle_daemon kotlin_daemon android_studio intellij; then
 else
     a_log "$OUTFILE" "[DRY-RUN] 會清除 Kotlin/Native 工具鏈 舊版本 kotlin-native-prebuilt-macos-aarch64-1.9.23" "dry-run log：列出舊 Kotlin/Native"
 fi
-if any_real_busy android_studio; then
-    skip "真實機器上 Android Studio 在跑，略過 dry-run 的 Android Studio 快取 log 斷言"
-else
-    # 舊版本只由 keep_newest_versions 整個刪一次；tier_b_dev_tool_caches 只清空留下來的版本，不重複列出（大小不重複計算）
-    a_log "$OUTFILE" "[DRY-RUN] 會清除 Android Studio 快取 舊版本 AndroidStudio2024.3.2" "dry-run log：舊 Android Studio 快取整個刪除"
-    a_nolog "$OUTFILE" "會清除 Android Studio 快取 AndroidStudio2024.3.2" "dry-run log：舊 Android Studio 快取不再列為清空"
-fi
+a_nolog "$OUTFILE" "Android Studio 快取 舊版本" "dry-run log：Android Studio 舊版本不列為整個刪除"
 
 echo "[apply]"
 OUTFILE="$SB/apply.txt"
@@ -88,15 +83,10 @@ else
     a_log "$OUTFILE" "Kotlin/Native 工具鏈：保留最新版 kotlin-native-prebuilt-macos-aarch64-2.0.0" "log：保留 aarch64 最新版"
     a_log "$OUTFILE" "Kotlin/Native 工具鏈：無法辨識版本，保留 kotlin-native-prebuilt-macos-aarch64-2.1.0-RC" "log：RC 無法辨識"
 fi
-if any_real_busy android_studio; then
-    skip "真實機器上 Android Studio 在跑，略過 Android Studio 快取斷言"
-    a_exists "$G/AndroidStudio2024.3.2" "擁有者在跑：舊 Android Studio 快取保留"
-else
-    a_gone "$G/AndroidStudio2024.3.2" "Android Studio 2024.3.2 快取刪除"
-    a_exists "$G/AndroidStudio2026.1.1/c" "Android Studio 最新版快取保留（只清 caches／index／tmp，t12 驗）"
-    a_exists "$G/AndroidStudioPreview2026.1" "Preview 是另一組，最新版保留"
-    a_gone "$G/AndroidStudioPreview2025.3" "Preview 舊版刪除"
-fi
+a_exists "$G/AndroidStudio2024.3.2/c" "Android Studio 舊版本不整個刪（只清 caches／index／tmp，t12 驗）"
+a_exists "$G/AndroidStudio2026.1.1/c" "Android Studio 最新版不整個刪"
+a_exists "$G/AndroidStudioPreview2025.3/c" "Android Studio Preview 舊版本不整個刪"
+a_nolog "$OUTFILE" "Android Studio 快取 舊版本" "log：Android Studio 舊版本不列為整個刪除"
 a_exists "$G/DriveFS/c" "Caches/Google 底下其他目錄不動"
 if any_real_busy gradle_daemon android_studio intellij; then
     skip "真實機器上 Gradle／Android Studio／IntelliJ 在跑，略過 Robolectric 斷言"
@@ -175,8 +165,8 @@ sleep 1
 OUTFILE="$SB/apply-preview.txt"
 run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "[apply preview] exit 0"
-a_exists "$G/AndroidStudioPreview2025.3" "Preview 在跑：舊 Android Studio 快取保留"
-a_log "$OUTFILE" "跳過 Android Studio 舊版本快取：Android Studio 正在執行" "log：Android Studio 快取因 Preview 跳過"
+a_exists "$G/AndroidStudioPreview2025.3/caches/x" "Preview 在跑：Android Studio 快取的 caches 不清"
+a_log "$OUTFILE" "跳過 Android Studio 快取 AndroidStudioPreview2025.3：Android Studio 正在執行" "log：Android Studio 快取因 Preview 跳過"
 a_exists "$RL/android-all-instrumented/15-robolectric-13954326-i7" "Android Studio 在跑：Robolectric android-all 保留"
 if any_real_busy gradle_daemon; then
     skip "真實機器上 Gradle daemon 在跑，略過 Robolectric 的 log 斷言"

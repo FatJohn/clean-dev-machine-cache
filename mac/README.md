@@ -52,7 +52,7 @@ log 寫在 `~/logs/clean-dev-mac/`（可用 `LOG_DIR` 覆寫），`--apply` 時�
 | 等級 | 旗標 | 清什麼 | 代價 |
 |---|---|---|---|
 | A | 預設 | Chrome／Edge code_sign_clone、Xcode DerivedData／Products／應用程式快取、失效模擬器、CoreSimulator logs、Codex CLI 舊版本、Claude Code 舊 session 暫存、Homebrew（`brew cleanup --prune=all`）、Codex runtime 安裝暫存、CoreSimulator 快取、XCTestDevices、Interface Builder 快取、JetBrains／gcloud／Azure CLI 的 log；AVD、Claude Code／Codex 對話紀錄只報告大小 | 沒有副作用，或只是重建成本 |
-| B | `--include-caches` | npm、pnpm、Yarn、Bun、Go、.NET、Gradle、CocoaPods、SwiftPM（兩個位置）、pub cache、Flutter SDK artifacts、Dart analysis server、各平台舊的 DeviceSupport、Chrome／Edge／Cursor 快取、Kotlin/Native 的舊版本、Android Studio 快取（舊版本整個刪、最新版只清 `caches`／`index`／`tmp`）、Android SDK／build 快取、久未使用的 Kotlin LSP 索引、Robolectric 下載的 android-all、Corepack／node-gyp／pip／Poetry／Expo 等開發工具快取；Playwright 只報告 | 下次用到時重新下載 |
+| B | `--include-caches` | npm、pnpm、Yarn、Bun、Go、.NET、Gradle、CocoaPods、SwiftPM（兩個位置）、pub cache、Flutter SDK artifacts、Dart analysis server、各平台舊的 DeviceSupport、Chrome／Edge／Cursor 快取、Kotlin/Native 的舊版本、Android Studio 快取（每個版本只清 `caches`／`index`／`tmp`，`LocalHistory` 不碰）、Android SDK／build 快取、久未使用的 Kotlin LSP 索引、Robolectric 下載的 android-all、Corepack／node-gyp／pip／Poetry／Expo 等開發工具快取；Playwright 只報告 | 下次用到時重新下載 |
 | C | `--projects DIR` | DIR 底下久未動過（`--stale-days`，預設 30 天）的 Flutter `build/`、`.dart_tool` 與 `node_modules` | 下次打開專案要重新 build／install |
 | D | `--include-simulators` | 所有 iOS 模擬器（`simctl delete all`，有開機中的就整項跳過）、無法使用或已過時的模擬器 runtime、所有 Android AVD；system-images 只報告 | 模擬器與裡面的 app、資料全失，要用時重建 |
 
@@ -84,7 +84,7 @@ bash tests/run.sh       # 在 mac/ 目錄執行；-v 印出每支測試的完整
 開跑前先確認每個工具都解析到假工具。若 `/opt/flutter` 存在，`t10` 會整支 SKIP，避免偵測退化時碰到真實 SDK。
 安全保證的細節寫在 `tests/lib.sh` 開頭。
 擁有者 app 的判斷看的是整台機器的 process，所以測試時開著 Chrome／Edge 等，對應斷言會改成檢查「有跳過」。
-`t12-simulators.sh` 專測 D 級與 B 級的 Android 快取，改用沙盒裡的假 `pgrep`，不受真實機器上開著的 app 影響。
+`t12-simulators.sh` 專測 D 級、B 級的 Android 快取，以及 xcodebuild、IntelliJ、Kotlin compile daemon 擁有者與 A 級 AVD 只報告，改用沙盒裡的假 `pgrep`，不受真實機器上開著的 app 影響。
 
 ## 相容性
 

@@ -27,7 +27,10 @@
 - 擁有者 app 在跑時該項直接跳過（`skip_if_busy`／`owner_running`），不等待、不殺 process。
 - D 級（`--include-simulators`）的 iOS 模擬器與 runtime 只經 `xcrun simctl`，不直接刪 `CoreSimulator/Devices`；
   `simctl list devices` 有 `(Booted)`／`(Booting)`／`(Shutting Down)` 或查詢失敗就整項跳過，不關機。
-  CoreSimulator 快取、XCTestDevices 與 D 級的 iOS 項目都把 `booted_sim`（`launchd_sim`）與 `xcodebuild` 列為擁有者。
+  CoreSimulator 快取、XCTestDevices 與 D 級的 iOS 項目都把 `booted_sim`（`launchd_sim`）與 `xcodebuild` 列為擁有者；
+  DerivedData、Products、`com.apple.dt.Xcode` 與 SwiftPM 快取也把 `xcodebuild` 列為擁有者（Xcode.app 沒開時的 `flutter build ipa`）。
+- Android Studio 快取（`~/Library/Caches/Google/AndroidStudio*`）不分新舊版本，只清各版本的 `caches`／`index`／`tmp`，
+  不整個刪版本目錄：同層的 `LocalHistory` 含未 commit 的改動，無法重建。
 - Codex 版本名稱由 `codex_kind` 去掉平台後綴後整串比對，認不出來的判成 unknown 一律保留。
   `tier_a_codex_releases` 永遠保留 current 指向的版本與最新版（`codex_newest`；有穩定版時是最新穩定版），
   解析不到 current 就整項略過。

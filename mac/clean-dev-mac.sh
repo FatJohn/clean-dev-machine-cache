@@ -231,9 +231,6 @@ free_space() {
 }
 
 TOTAL_FREED_KB=0
-# keep_newest_versions 這次交給 clean purge 的舊版本路徑（換行分隔）；後面的項目據此避開同一個目錄，
-#   dry-run 時目錄還在，不避開會重複計算大小
-OLD_VERSIONS_PURGED=""
 
 # 防呆：拒絕刪除空字串、根目錄、HOME 本身與 HOME 的上層目錄。
 #   先正規化再比對（//、/.、結尾 /），目錄存在時也比對 symlink 解析後的實體路徑。
@@ -481,16 +478,17 @@ tier_a_code_sign_clone() {
 }
 
 tier_a_xcode() {
+    # 建置產物另把 xcodebuild 列為擁有者：Xcode.app 沒開時，終端機的 flutter build ipa、xcodebuild archive 仍在用
     local dd="${HOME}/Library/Developer/Xcode/DerivedData"
-    skip_if_busy "$dd" "Xcode DerivedData" xcode \
+    skip_if_busy "$dd" "Xcode DerivedData" xcode xcodebuild \
         || clean empty "$dd" "Xcode DerivedData"
 
     local products="${HOME}/Library/Developer/Xcode/Products"
-    skip_if_busy "$products" "Xcode Products" xcode \
+    skip_if_busy "$products" "Xcode Products" xcode xcodebuild \
         || clean purge "$products" "Xcode Products"
 
     local xcache="${HOME}/Library/Caches/com.apple.dt.Xcode"
-    skip_if_busy "$xcache" "Xcode 應用程式快取" xcode \
+    skip_if_busy "$xcache" "Xcode 應用程式快取" xcode xcodebuild \
         || clean purge "$xcache" "Xcode 應用程式快取"
 
     if have xcrun; then
@@ -679,10 +677,13 @@ EOF
 # 只報告：清了會掉資料或要改設定的大目錄，script 不刪，處理方式見 docs/disk-space-knowledge.md
 tier_a_home_data_report() {
     local d
-    for d in "${HOME}"/.android/avd/*.avd; do
-        [ -d "$d" ] && [ ! -L "$d" ] || continue
-        log_info "[只報告] Android 模擬器 $(basename "$d" .avd) — $(human "$(dir_kb "$d")")（要縮小用 Device Manager 的 Wipe Data，模擬器內資料會消失）"
-    done
+    # 有 --include-simulators 時 D 級會清空整個 ~/.android/avd，這裡就不再報告
+    if [ "$INCLUDE_SIMULATORS" != true ]; then
+        for d in "${HOME}"/.android/avd/*.avd; do
+            [ -d "$d" ] && [ ! -L "$d" ] || continue
+            log_info "[只報告] Android 模擬器 $(basename "$d" .avd) — $(human "$(dir_kb "$d")")（要縮小用 Device Manager 的 Wipe Data，模擬器內資料會消失）"
+        done
+    fi
     d="${HOME}/.claude/projects"
     if [ -d "$d" ] && [ ! -L "$d" ]; then
         log_info "[只報告] Claude Code 對話紀錄 — $(human "$(dir_kb "$d")") — ${d}（保留天數由 ~/.claude/settings.json 的 cleanupPeriodDays 控制，預設 30）"
@@ -763,8 +764,9 @@ tier_b_packages() {
         log_skip "沒有 dotnet，略過 NuGet 快取"
     fi
 
-    # Gradle：保留 wrapper（Gradle 本體）與 gradle.properties（常含 signing 設定），只清下面三個
-    if ! skip_if_busy "${HOME}/.gradle" "Gradle caches／daemon／.tmp" android_studio gradle_daemon emulator; then
+    # Gradle：保留 wrapper（Gradle 本體）與 gradle.properties（常含 signing 設定），只清下面三個。
+    #   IntelliJ 開著 Gradle 專案時，即使 daemon 已經結束，同步專案仍會讀 caches，所以也列為擁有者
+    if ! skip_if_busy "${HOME}/.gradle" "Gradle caches／daemon／.tmp" android_studio intellij gradle_daemon kotlin_daemon emulator; then
         log_info "Gradle：保留 wrapper（Gradle 本體）與 gradle.properties（常含 signing 設定）"
         clean purge "${HOME}/.gradle/caches" "Gradle caches"
         clean purge "${HOME}/.gradle/daemon" "Gradle daemon log"
@@ -774,7 +776,7 @@ tier_b_packages() {
     clean purge "${HOME}/Library/Caches/CocoaPods" "CocoaPods 快取"
 
     local spm="${HOME}/Library/Caches/org.swift.swiftpm"
-    skip_if_busy "$spm" "SwiftPM 快取" xcode \
+    skip_if_busy "$spm" "SwiftPM 快取" xcode xcodebuild \
         || clean purge "$spm" "SwiftPM 快取"
 
     clean purge "${HOME}/.dartServer" "Dart analysis server 快取"
@@ -938,7 +940,7 @@ version_split() {
 
 # keep_newest_versions <上層目錄> <find -name pattern> <描述>
 #   第一層符合 pattern 的目錄依「版本號前面的前綴」分組，每組只保留版本最新的一個（sort -V），其餘 purge。
-#   前綴不同就是不同組（AndroidStudio 與 AndroidStudioPreview 各留一個）；
+#   前綴不同就是不同組（kotlin-native-prebuilt-macos-aarch64- 與 -x86_64- 各留一個）；
 #   名稱結尾不是純數字版本的（2.1.0-RC、2.1.0-RC1、dependencies 等）認不出來，一律保留。
 keep_newest_versions() {
     local parent="$1" pattern="$2" desc="$3" tab='	'
@@ -982,9 +984,7 @@ ${keep}" in
             *"
 ${name}
 "*) log_info "${desc}：保留最新版 ${name}" ;;
-            *) clean purge "${parent}/${name}" "${desc} 舊版本 ${name}"
-               OLD_VERSIONS_PURGED="${OLD_VERSIONS_PURGED}${parent}/${name}
-" ;;
+            *) clean purge "${parent}/${name}" "${desc} 舊版本 ${name}" ;;
         esac
     done <<EOF
 ${list}
@@ -1042,9 +1042,6 @@ tier_b_kotlin_android() {
     skip_if_busy "" "Kotlin/Native 舊版本" gradle_daemon kotlin_daemon android_studio intellij \
         || keep_newest_versions "${HOME}/.konan" 'kotlin-native-prebuilt-*' "Kotlin/Native 工具鏈"
 
-    skip_if_busy "" "Android Studio 舊版本快取" android_studio \
-        || keep_newest_versions "${HOME}/Library/Caches/Google" 'AndroidStudio*' "Android Studio 快取"
-
     local ws="${HOME}/Library/Caches/JetBrains/IntelliJServer/workspaces"
     skip_if_busy "$ws" "Kotlin LSP workspace 索引" kotlin_lsp \
         || clean_idle_workspaces "$ws" 14 "Kotlin LSP workspace 索引"
@@ -1100,19 +1097,15 @@ EOF
 
     # Android（Mole 的 clean_dev_mobile）：SDK 下載快取與舊版 AGP 的 build cache；
     # Android Studio 自己的快取在它開著時會用到，所以宣告擁有者
-    if ! skip_if_busy "${HOME}/.android/cache" "Android SDK／build 快取" android_studio gradle_daemon emulator; then
+    if ! skip_if_busy "${HOME}/.android/cache" "Android SDK／build 快取" android_studio intellij gradle_daemon kotlin_daemon emulator; then
         clean purge "${HOME}/.android/cache"       "Android SDK 快取"
         clean purge "${HOME}/.android/build-cache" "Android build 快取"
     fi
-    # 舊版本已由 tier_b_kotlin_android 的 keep_newest_versions 整個刪除；留下來的版本只清空可重建的
-    #   caches、index、tmp。同層的 LocalHistory 是 IDE 的本機修改歷史（含未 commit 的改動），無法重建，不碰
+    # 每個版本（含舊版本）都只清空可重建的 caches、index、tmp，不整個刪版本目錄：
+    #   同層的 LocalHistory 是 IDE 的本機修改歷史（含未 commit 的改動），無法重建，不碰
     local d sub
     for d in "${HOME}"/Library/Caches/Google/AndroidStudio*; do
         [ -d "$d" ] || continue
-        case "
-${OLD_VERSIONS_PURGED}" in *"
-${d}
-"*) continue ;; esac
         if [ -L "$d" ]; then
             log_skip "是 symlink，為安全起見略過：Android Studio 快取 $(basename "$d") — ${d}"
             continue
@@ -1125,7 +1118,7 @@ ${d}
     done
 
     local spm="${HOME}/.cache/swift-package-manager"
-    skip_if_busy "$spm" "SwiftPM 全域快取" xcode \
+    skip_if_busy "$spm" "SwiftPM 全域快取" xcode xcodebuild \
         || clean purge "$spm" "SwiftPM 全域快取"
 
     # 其他平台的 DeviceSupport（Mole 的 clean_xcode_device_support 涵蓋的平台），規則與 iOS／watchOS 相同
@@ -1268,10 +1261,10 @@ scan_project_dir() {
                 for target in "${dir}/build" "${dir}/.dart_tool"; do
                     [ -d "$target" ] || continue
                     is_stale "$target" || continue
-                    # pub get／flutter run 只改 .dart_tool 深層的檔案，目錄本身的 mtime 不會跟著變；
-                    #   整棵樹都沒有 N 天內更新的項目才算久未使用
-                    if [ "$(basename "$target")" = .dart_tool ] \
-                        && [ -n "$(find "$target" -mmin "-$(days_to_min "$STALE_DAYS")" -print -quit 2>/dev/null)" ]; then
+                    # pub get／flutter run／重新 build 只改深層的檔案，目錄本身的 mtime 不會跟著變；
+                    #   整棵樹都沒有 N 天內更新的項目才算久未使用。find 找到第一個新檔就停，
+                    #   只有整棵樹都舊（接著就要刪、clean 也會 du 一次）時才會走完
+                    if [ -n "$(find "$target" -mmin "-$(days_to_min "$STALE_DAYS")" -print -quit 2>/dev/null)" ]; then
                         continue
                     fi
                     found=true

@@ -72,12 +72,12 @@ echo "[假 process 結束後的對照組]"
 OUTFILE="$SB/apply-idle.txt"
 FR="$FS" run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "[apply idle] exit 0"
-a_cleaned gone "$H/Library/Developer/Xcode/DerivedData/p1" "Xcode DerivedData" xcode
-a_cleaned gone "$H/Library/Developer/Xcode/Products" "Xcode Products" xcode
-a_cleaned gone "$H/Library/Caches/com.apple.dt.Xcode" "Xcode 應用程式快取" xcode
-a_cleaned gone "$H/Library/Caches/org.swift.swiftpm" "SwiftPM 快取" xcode
+a_cleaned gone "$H/Library/Developer/Xcode/DerivedData/p1" "Xcode DerivedData" xcode xcodebuild
+a_cleaned gone "$H/Library/Developer/Xcode/Products" "Xcode Products" xcode xcodebuild
+a_cleaned gone "$H/Library/Caches/com.apple.dt.Xcode" "Xcode 應用程式快取" xcode xcodebuild
+a_cleaned gone "$H/Library/Caches/org.swift.swiftpm" "SwiftPM 快取" xcode xcodebuild
 a_cleaned gone "$H/Library/Developer/Xcode/iOS DeviceSupport/old" "iOS DeviceSupport" xcode
-if any_real_busy android_studio gradle_daemon emulator; then
+if any_real_busy android_studio intellij gradle_daemon kotlin_daemon emulator; then
     skip "真實機器上 Gradle 擁有者在跑，略過 Gradle 對照組"
 else
     a_gone "$H/.gradle/caches" "Gradle caches 刪除"
