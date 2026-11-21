@@ -45,6 +45,7 @@ a_exists "$SB/out3/typescript/keep" "HOME 外的 TypeScript 快取保留"
 a_exists "$SB/out3/node/corepack/keep" "HOME 外的 Corepack 快取保留（兩層深）"
 a_exists "$SB/out3/codex-runtimes/codex-runtime-install-1/keep" "HOME 外的 codex runtime 暫存保留（A 級）"
 a_log "$OUTFILE" "路徑中間有 symlink（${H}/.cache），為安全起見略過：TypeScript 型別定義快取" "log：.cache symlink 略過 TypeScript"
+a_log "$OUTFILE" "不存在，略過：ESLint 快取" "log：symlink 底下不存在的項目記成不存在"
 if any_real_busy xcode xcodebuild; then
     skip "真實機器上 Xcode／xcodebuild 在跑，SwiftPM 全域快取在 symlink 檢查前就被跳過"
 else
@@ -89,10 +90,24 @@ ln -s "$E/sdks" "$H/sdks"; ln -s "$E/proj" "$H/Projects"
 OUTFILE="$SB/r6.txt"
 FR="$H/sdks/flutter" PC="$H/sdks/pub" run_script "$H" --apply --include-caches --projects "$H/Projects/" > "$OUTFILE" 2>&1
 a_eq "$?" 0 "exit 0"
-a_gone "$E/sdks/pub/hosted" "PUB_CACHE 經 symlink：hosted 已刪除"
+a_cleaned gone "$E/sdks/pub/hosted" "pub cache" flutter_tool dart_analyzer
 a_exists "$E/sdks/pub/global_packages/g" "PUB_CACHE 的 global_packages 保留"
 a_cleaned gone "$E/sdks/flutter/bin/cache" "Flutter SDK artifacts" flutter_tool dart_analyzer
 a_gone "$E/proj/app/node_modules" "--projects 經 symlink：node_modules 已刪除"
 a_nolog "$OUTFILE" "路徑中間有 symlink" "log：明確根目錄沒有被當成中間層 symlink"
+
+echo "[明確指定的根目錄底下有 symlink：照樣略過]"
+H="$SB/h7"; FRD="$SB/fr7"; mkdir -p "$H" "$FRD"
+mkflutter_sdk "$SB/out7"; mkdir -p "$SB/out7/bin/cache/x"; echo keep > "$SB/out7/bin/cache/x/keep"
+ln -s "$SB/out7/bin" "$FRD/bin"
+OUTFILE="$SB/r7.txt"
+FR="$FRD" run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
+a_eq "$?" 0 "exit 0"
+a_exists "$SB/out7/bin/cache/x/keep" "FLUTTER_ROOT/bin 指到的外部 bin/cache 保留"
+if any_real_busy flutter_tool dart_analyzer; then
+    skip "真實機器上 flutter_tools／Dart analysis server 在跑，Flutter SDK artifacts 在 symlink 檢查前就被跳過"
+else
+    a_log "$OUTFILE" "路徑中間有 symlink（${FRD}/bin），為安全起見略過：Flutter SDK artifacts" "log：起點底下的 symlink 略過"
+fi
 
 finish

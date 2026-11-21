@@ -288,14 +288,14 @@ clean() {
         return 0
     fi
 
-    local link; link=$(symlink_parent "$path" "$base")
-    if [ -n "$link" ]; then
-        log_skip "路徑中間有 symlink（${link}），為安全起見略過：${desc} — ${path}"
+    if [ ! -e "$path" ]; then
+        log_skip "不存在，略過：${desc}"
         return 0
     fi
 
-    if [ ! -e "$path" ]; then
-        log_skip "不存在，略過：${desc}"
+    local link; link=$(symlink_parent "$path" "$base")
+    if [ -n "$link" ]; then
+        log_skip "路徑中間有 symlink（${link}），為安全起見略過：${desc} — ${path}"
         return 0
     fi
 
@@ -337,14 +337,14 @@ clean_older() {
         return 0
     fi
 
-    local link; link=$(symlink_parent "$path" "$base")
-    if [ -n "$link" ]; then
-        log_skip "路徑中間有 symlink（${link}），為安全起見略過：${desc} — ${path}"
+    if [ ! -d "$path" ]; then
+        log_skip "不存在，略過：${desc}"
         return 0
     fi
 
-    if [ ! -d "$path" ]; then
-        log_skip "不存在，略過：${desc}"
+    local link; link=$(symlink_parent "$path" "$base")
+    if [ -n "$link" ]; then
+        log_skip "路徑中間有 symlink（${link}），為安全起見略過：${desc} — ${path}"
         return 0
     fi
 

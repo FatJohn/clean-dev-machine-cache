@@ -14,7 +14,8 @@
   是 `/`、`~` 或 `~` 的上層目錄就不刪。`FLUTTER_ROOT`、`PUB_CACHE` 要通過結構檢查才清；
   `--projects` 拒絕 `~`、`/`、`~` 的上層目錄與 `~/Library` 底下。
 - **symlink 一律略過**：要清的路徑本身是 symlink 時不跟進去，也不刪 symlink 本身；`~` 底下的路徑中間有一層是 symlink
-  （例如 `~/.kube` 指到外接碟）時也略過，不跟著刪到 symlink 指的地方。
+  （例如 `~/.kube` 指到外接碟）時也略過，不跟著刪到 symlink 指的地方；`~` 本身、pub cache、Flutter SDK、
+  `--projects` 這類通過檢查的根目錄本身或上面經過 symlink 不算（細節見 [安全檢查](docs/usage.md#安全檢查)）。
 - **刻意不碰**：垃圾桶、Android system-images／NDK、仍可使用且沒有更新版本的 iOS simulator runtime、Claude desktop VM、
   Chrome 裝置端 AI 模型、Docker、Time Machine 本機快照、Xcode Archives、`~/Library/Application Support`
   底下的 app 資料。AVD 與所有 iOS 模擬器只在加 `--include-simulators`（D 級）時才清。這些要人判斷，手動步驟見 [docs/disk-space-knowledge.md](docs/disk-space-knowledge.md)
