@@ -239,6 +239,31 @@ unsafe_path() {
     is_home_or_above "$1"
 }
 
+# symlink_parent <路徑> [起點]  印出起點與路徑之間第一個是 symlink 的那一層；沒有就不印。
+#   起點預設是 HOME（文字與實體兩種寫法都認）；明確設定或驗證過的根目錄（FLUTTER_ROOT、PUB_CACHE、
+#   --projects）由呼叫端傳入，從那裡開始查。起點本身與它的上層不檢查：HOME 可以是 symlink
+#   （/Users/x → /System/Volumes/Data/Users/x），/tmp、/var 也是。路徑不在起點底下（例如 /private/tmp
+#   的 Claude 暫存）就不檢查。路徑本身是不是 symlink 由 clean／clean_older 的 -L 檢查負責。
+symlink_parent() {
+    local path base rel="" cur
+    path=$(norm_text "$1")
+    if [ -n "${2:-}" ]; then set -- "$(norm_text "$2")"; else set -- "$HOME_T" "$HOME_P"; fi
+    for base in "$@"; do
+        case "$path" in "${base}/"*) rel="${path#"${base}"/}"; break ;; esac
+    done
+    [ -n "$rel" ] || return 0
+    cur="$base"
+    while :; do
+        case "$rel" in */*) ;; *) return 0 ;; esac
+        cur="${cur}/${rel%%/*}"
+        rel="${rel#*/}"
+        if [ -L "$cur" ]; then
+            printf '%s\n' "$cur"
+            return 0
+        fi
+    done
+}
+
 # days_to_min <天數>  find -mmin 用的分鐘數。不用 -mtime：實測 BSD find 的 -mtime +N
 #   要超過 N+1 天才命中（-mtime +1 要超過 48 小時才命中），與字面差一天。
 #   -mmin +M 則是「超過 M 分鐘」，所以「超過 N 天」＝ -mmin +(N×1440)。
@@ -246,11 +271,12 @@ days_to_min() {
     echo $(( $1 * 1440 ))
 }
 
-# clean <purge|empty> <path> <描述>
+# clean <purge|empty> <path> <描述> [起點]
 #   purge — 連目錄本身一起刪
 #   empty — 保留目錄本身，只清內容
+#   起點：中間層 symlink 檢查的起點（見 symlink_parent），預設 HOME
 clean() {
-    local mode="$1" path="$2" desc="$3"
+    local mode="$1" path="$2" desc="$3" base="${4:-}"
 
     if unsafe_path "$path"; then
         log_error "拒絕清除危險路徑：${desc} — '${path}'"
@@ -264,6 +290,12 @@ clean() {
 
     if [ ! -e "$path" ]; then
         log_skip "不存在，略過：${desc}"
+        return 0
+    fi
+
+    local link; link=$(symlink_parent "$path" "$base")
+    if [ -n "$link" ]; then
+        log_skip "路徑中間有 symlink（${link}），為安全起見略過：${desc} — ${path}"
         return 0
     fi
 
@@ -291,9 +323,9 @@ clean() {
     fi
 }
 
-# clean_older <path> <天數> <描述>  只刪第一層中超過 N 天沒動過的項目
+# clean_older <path> <天數> <描述> [起點]  只刪第一層中超過 N 天沒動過的項目；起點同 clean
 clean_older() {
-    local path="$1" days="$2" desc="$3"
+    local path="$1" days="$2" desc="$3" base="${4:-}"
 
     if unsafe_path "$path"; then
         log_error "拒絕清除危險路徑：${desc} — '${path}'"
@@ -307,6 +339,12 @@ clean_older() {
 
     if [ ! -d "$path" ]; then
         log_skip "不存在，略過：${desc}"
+        return 0
+    fi
+
+    local link; link=$(symlink_parent "$path" "$base")
+    if [ -n "$link" ]; then
+        log_skip "路徑中間有 symlink（${link}），為安全起見略過：${desc} — ${path}"
         return 0
     fi
 
@@ -826,12 +864,12 @@ tier_b_pub_cache() {
             log_skip "沒有 dart，不執行 dart pub cache gc，改用路徑清理"
         fi
         log_info "pub cache：保留 bin 與 global_packages（pub global 裝的工具）"
-        clean purge "${pub}/hosted"        "pub cache hosted 套件"
-        clean purge "${pub}/hosted-hashes" "pub cache 套件 hash（隨 hosted 一起失效）"
-        clean purge "${pub}/git"           "pub cache git 套件"
+        clean purge "${pub}/hosted"        "pub cache hosted 套件" "$pub"
+        clean purge "${pub}/hosted-hashes" "pub cache 套件 hash（隨 hosted 一起失效）" "$pub"
+        clean purge "${pub}/git"           "pub cache git 套件" "$pub"
     fi
-    clean purge "${pub}/.tmp"  "pub cache 暫存"
-    clean purge "${pub}/_temp" "pub cache 下載暫存"
+    clean purge "${pub}/.tmp"  "pub cache 暫存" "$pub"
+    clean purge "${pub}/_temp" "pub cache 下載暫存" "$pub"
 }
 
 # is_flutter_sdk <路徑>  看起來是 Flutter SDK 根目錄回 0：要有 bin/flutter 與 bin/internal，
@@ -893,7 +931,7 @@ tier_b_flutter_sdk() {
         return 0
     fi
     skip_if_busy "$cache" "Flutter SDK artifacts" flutter_tool dart_analyzer \
-        || clean purge "$cache" "Flutter SDK artifacts（下次執行 flutter 會自動 precache）"
+        || clean purge "$cache" "Flutter SDK artifacts（下次執行 flutter 會自動 precache）" "$root"
 }
 
 # Playwright 只報告：同一瀏覽器有多個 revision 時，舊 revision 可手動刪（見文件）
@@ -1268,7 +1306,7 @@ scan_project_dir() {
                         continue
                     fi
                     found=true
-                    clean purge "$target" "Flutter $(basename "$target")（${STALE_DAYS} 天未更新）"
+                    clean purge "$target" "Flutter $(basename "$target")（${STALE_DAYS} 天未更新）" "$root"
                 done
                 ;;
             package.json)
@@ -1278,7 +1316,7 @@ scan_project_dir() {
                 [ -e "$ref" ] || ref="$target"
                 is_stale "$ref" || continue
                 found=true
-                clean purge "$target" "node_modules（${STALE_DAYS} 天未安裝）"
+                clean purge "$target" "node_modules（${STALE_DAYS} 天未安裝）" "$root"
                 ;;
         esac
     done <<EOF
