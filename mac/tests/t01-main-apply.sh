@@ -61,7 +61,7 @@ mkdir -p "$TDS/old t" "$TDS/new t"; old "$TDS/old t"
 
 # ---- C 級 ----
 PR="$SB/projects"
-mkdir -p "$PR/app one/build/x"; touch "$PR/app one/pubspec.yaml"; old "$PR/app one/build"
+mkdir -p "$PR/app one/build/x"; touch "$PR/app one/pubspec.yaml"; old "$PR/app one/build/x" "$PR/app one/build"
 mkdir -p "$PR/app fresh/build/x"; touch "$PR/app fresh/pubspec.yaml"
 mkdir -p "$PR/web two/node_modules/dep"; touch "$PR/web two/package.json"
 echo {} > "$PR/web two/node_modules/.package-lock.json"; old "$PR/web two/node_modules/.package-lock.json"
@@ -84,9 +84,13 @@ if [ -s "$SB/calls.log" ]; then fail "DISABLE_TOOL_COMMANDS 下呼叫了外部�
 
 echo "[A 級]"
 a_exists "$H/Library/Developer/Xcode/DerivedData" "DerivedData symlink 保留"
-a_log "$OUTFILE" "是 symlink，為安全起見略過：Xcode DerivedData" "log：DerivedData 是 symlink 略過"
-a_cleaned gone "$H/Library/Developer/Xcode/Products" "Xcode Products" xcode
-a_cleaned gone "$H/Library/Caches/com.apple.dt.Xcode" "Xcode 應用程式快取" xcode
+if any_real_busy xcode xcodebuild; then
+    skip "真實機器上 Xcode／xcodebuild 在跑，DerivedData 在 symlink 檢查前就被跳過"
+else
+    a_log "$OUTFILE" "是 symlink，為安全起見略過：Xcode DerivedData" "log：DerivedData 是 symlink 略過"
+fi
+a_cleaned gone "$H/Library/Developer/Xcode/Products" "Xcode Products" xcode xcodebuild
+a_cleaned gone "$H/Library/Caches/com.apple.dt.Xcode" "Xcode 應用程式快取" xcode xcodebuild
 a_cleaned empty "$H/Library/Logs/CoreSimulator" "CoreSimulator logs" xcode simulator
 a_exists "$H/Library/Developer/Xcode/Archives/keep me" "Xcode Archives 不碰"
 a_cleaned empty "$SB/X/com.google.Chrome.code_sign_clone" "Chrome code_sign_clone" chrome
@@ -121,7 +125,7 @@ a_gone "$H/.npm/_logs" "npm _logs 刪除"
 a_gone "$H/Library/Caches/Yarn" "Yarn v1 快取刪除"
 a_gone "$H/.yarn/berry/cache" "Yarn Berry 快取刪除"
 a_gone "$H/.bun/install/cache" "Bun 快取刪除"
-if any_real_busy android_studio gradle_daemon emulator; then
+if any_real_busy android_studio intellij gradle_daemon kotlin_daemon emulator; then
     a_exists "$H/.gradle/caches" "真實機器上 Gradle 擁有者在跑，Gradle caches 保留"
     a_log "$OUTFILE" "跳過 Gradle caches／daemon／.tmp：" "log：Gradle 跳過"
 else
@@ -132,7 +136,7 @@ fi
 a_exists "$H/.gradle/wrapper/dists/w" "Gradle wrapper 保留"
 a_exists "$H/.gradle/gradle.properties" "gradle.properties 保留"
 a_gone "$H/Library/Caches/CocoaPods" "CocoaPods 快取刪除"
-a_cleaned gone "$H/Library/Caches/org.swift.swiftpm" "SwiftPM 快取" xcode
+a_cleaned gone "$H/Library/Caches/org.swift.swiftpm" "SwiftPM 快取" xcode xcodebuild
 a_gone "$H/.dartServer" "假 HOME 的 .dartServer 刪除"
 if any_real_busy flutter_tool dart_analyzer; then
     skip "真實機器上 flutter_tools／Dart analysis server 在跑，pub cache 與 Flutter SDK 項目改由 t05 驗證"
@@ -164,7 +168,7 @@ a_gone "$H/.expo/expo-go" "Expo Go 快取刪除"
 a_exists "$H/.expo/state.json" "Expo state.json（登入資訊）保留"
 a_gone "$H/.rustup/downloads" "rustup 下載快取刪除"
 a_exists "$H/.rustup/toolchains/stable" "rustup toolchains 保留"
-if any_real_busy android_studio gradle_daemon emulator; then
+if any_real_busy android_studio intellij gradle_daemon kotlin_daemon emulator; then
     a_exists "$H/.android/cache/c" "真實機器上 Android 擁有者在跑，Android SDK 快取保留"
     a_log "$OUTFILE" "跳過 Android SDK／build 快取：" "log：Android SDK 快取跳過"
 else
@@ -177,7 +181,7 @@ a_gone "$H/.kube/cache/discovery" "kubectl discovery 快取刪除"
 a_exists "$H/.kube/cache/oidc-login/t" "kubelogin token 保留"
 a_exists "$H/.android/avd/Pixel.avd" "B 級不碰 AVD"
 a_exists "$H/.android/adbkey" "adbkey 保留"
-a_cleaned gone "$H/.cache/swift-package-manager" "SwiftPM 全域快取" xcode
+a_cleaned gone "$H/.cache/swift-package-manager" "SwiftPM 全域快取" xcode xcodebuild
 a_cleaned gone "$TDS/old t" "tvOS DeviceSupport" xcode
 a_exists "$TDS/new t" "tvOS DeviceSupport 90 天內保留"
 

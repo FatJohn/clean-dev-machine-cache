@@ -114,7 +114,7 @@ D 級（`--include-simulators`）只跑 `simctl runtime delete --unusable`（無
 | Gradle daemon log／暫存 | `~/.gradle/daemon`、`~/.gradle/.tmp` | 實測 daemon 9.2 MB | daemon 的 log 與暫存 | 刪除 | 無 | B |
 | Gradle wrapper | `~/.gradle/wrapper/dists` | 每版約 200 MB（實例 1.74） | 各版 Gradle 本體 | 刪掉沒在用的版本目錄 | 用到時重新下載 | 不涵蓋（script 刻意保留；`~/.gradle/gradle.properties` 常含 signing 設定，也保留） |
 | Kotlin/Native | `~/.konan/kotlin-native-prebuilt-*` | 每版約 1 GB（實例 2.50） | KMP 的 Kotlin/Native 工具鏈，每個用過的 Kotlin 版本一份 | 每個架構只留最新版，刪掉舊版本目錄；`dependencies` 保留 | 釘在舊版的專案下次 build 重新下載 | B |
-| Android Studio 快取 | `~/Library/Caches/Google/AndroidStudio<版本>` | 每版數百 MB 到數 GB | 各版 Android Studio 的索引與快取，升級後舊版目錄不會自己消失 | 舊版本目錄整個刪掉；每組留下的最新版只清空 `caches`、`index`、`tmp`（`LocalHistory` 是本機修改歷史，不碰） | 舊版無；最新版下次開 IDE 重建 index | B |
+| Android Studio 快取 | `~/Library/Caches/Google/AndroidStudio<版本>` | 每版數百 MB 到數 GB | 各版 Android Studio 的索引與快取，升級後舊版目錄不會自己消失 | 每個版本（含舊版本）只清空 `caches`、`index`、`tmp`；`LocalHistory` 是本機修改歷史（含未 commit 的改動），無法重建，script 不碰。確定不再用某個舊版本、也不需要它的 LocalHistory，才手動刪整個舊版本目錄 | 下次開 IDE 重建 index；手動刪舊版本目錄會失去該版的 LocalHistory | B（`caches`／`index`／`tmp`） |
 | Kotlin LSP 索引 | `~/Library/Caches/JetBrains/IntelliJServer/workspaces` | 每個專案約 200 MB | `kotlin-lsp` 為每個開過的專案建的索引 | 刪除久未開的專案目錄 | 下次打開該專案重建索引 | B（14 天） |
 | Robolectric android-all | `~/.m2/repository/org/robolectric/android-all`、`android-all-instrumented` | 每個 SDK 版本約 100–200 MB（實例 395 MB） | Robolectric 測試用的 Android framework jar，每個用到的 SDK 版本一份 | 刪除這兩個目錄 | 下次跑 Robolectric 測試重新下載 | B |
 | Maven 本機套件庫 | `~/.m2/repository` | 數百 MB 起 | Maven／部分 Gradle 專案下載的相依套件，也含 `mvn install` 裝進來的本機套件 | 確認沒有只存在本機的套件後刪除 | 重新下載；本機 install 的套件要重新 build | 不涵蓋（Robolectric android-all 除外） |

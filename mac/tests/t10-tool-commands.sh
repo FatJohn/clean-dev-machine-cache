@@ -179,7 +179,9 @@ preflight_flutter() {
 calls() { cut -f 1,2 "$CALLS" | tr '\t' ' '; }
 dart_count() { grep -c "^dart	" "$CALLS"; }
 
-XCODE_BUSY=false; any_real_busy xcode simulator booted_sim xcodebuild && XCODE_BUSY=true
+# simctl delete unavailable 的擁有者只有 xcode、simulator；D 級 iOS 另含 booted_sim、xcodebuild，兩者分開判斷
+XCODE_BUSY=false; any_real_busy xcode simulator && XCODE_BUSY=true
+SIM_BUSY=false; any_real_busy xcode simulator booted_sim xcodebuild && SIM_BUSY=true
 FLUTTER_BUSY=false; any_real_busy flutter_tool dart_analyzer && FLUTTER_BUSY=true
 
 echo "[dry-run：只有查詢型呼叫]"
@@ -338,8 +340,8 @@ SIM_CMDS="xcrun simctl list devices
 xcrun simctl delete all
 xcrun simctl runtime delete --unusable
 xcrun simctl runtime delete --outdated"
-if [ "$XCODE_BUSY" = true ]; then
-    skip "真實機器上 Xcode／Simulator 在跑，D 級 iOS 模擬器整項跳過，略過 xcrun 呼叫斷言"
+if [ "$SIM_BUSY" = true ]; then
+    skip "真實機器上 Xcode／Simulator／開機中的模擬器／xcodebuild 在跑，D 級 iOS 模擬器整項跳過，略過 xcrun 呼叫斷言"
 else
     OUTFILE="$SB/sim-dry.txt"
     XPATH="$SIMX" run_tools --include-simulators > "$OUTFILE" 2>&1

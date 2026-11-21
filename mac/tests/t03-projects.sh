@@ -32,12 +32,15 @@ a_eq "$?" 0 "exit 0"
 a_eq "$(left)" 2 "新的 build／node_modules 都保留"
 a_log "$OUTFILE" "底下沒有超過 30 天的 build/、.dart_tool 或 node_modules" "log：沒有可清項目"
 
-echo "[Flutter .dart_tool：跟 build/ 一樣看門檻]"
+echo "[Flutter .dart_tool 與 build/：整棵樹都久未更新才刪]"
 mkp
 mkdir -p "$P/old dt/.dart_tool/x" "$P/fresh app/.dart_tool/y"; touch "$P/old dt/pubspec.yaml"; old "$P/old dt/.dart_tool/x" "$P/old dt/.dart_tool"
 # 目錄本身久未更新，但裡面的 package_config.json 剛被 pub get 改寫：還在用，保留
 mkdir -p "$P/used dt/.dart_tool/flutter_build"; touch "$P/used dt/pubspec.yaml" "$P/used dt/.dart_tool/package_config.json"
 old "$P/used dt/.dart_tool/flutter_build" "$P/used dt/.dart_tool"
+# build/ 同理：重新 build 只覆寫深層檔案，build 與 build/ios 的 mtime 都舊，但 Runner.app 剛更新
+mkdir -p "$P/used dt/build/ios/Runner.app"; touch "$P/used dt/build/ios/Runner.app/Runner"
+old "$P/used dt/build/ios/Runner.app" "$P/used dt/build/ios" "$P/used dt/build"
 mkdir -p "$P/old dt/lib"; touch "$P/old dt/lib/main.dart"; old "$P/old dt/lib"
 OUTFILE="$SB/r.txt"
 run_script "$H" --apply --projects "$P" > "$OUTFILE" 2>&1
@@ -45,6 +48,7 @@ a_eq "$?" 0 "exit 0"
 a_gone "$P/old dt/.dart_tool" "久未更新的 .dart_tool 刪除"
 a_exists "$P/fresh app/.dart_tool/y" "新的 .dart_tool 保留"
 a_exists "$P/used dt/.dart_tool/package_config.json" "目錄 mtime 舊但深層檔案剛更新的 .dart_tool 保留"
+a_exists "$P/used dt/build/ios/Runner.app/Runner" "目錄 mtime 舊但深層檔案剛更新的 build/ 保留"
 a_exists "$P/old dt/lib/main.dart" "原始碼 lib/ 保留"
 a_exists "$P/old dt/pubspec.yaml" "pubspec.yaml 保留"
 a_log "$OUTFILE" "已清除 Flutter .dart_tool（30 天未更新）" "log：已清除 .dart_tool"
@@ -93,7 +97,7 @@ OUTFILE="$SB/r.txt"
 run_script "$H" --apply --projects "$H" > "$OUTFILE" 2>&1
 a_eq "$?" 1 "exit 1"
 a_log "$OUTFILE" "拒絕掃描 ${H}：這是 /、~ 或 ~ 的上層目錄" "log：拒絕掃描 HOME"
-a_cleaned gone "$H/Library/Developer/Xcode/Products" "Xcode Products" xcode
+a_cleaned gone "$H/Library/Developer/Xcode/Products" "Xcode Products" xcode xcodebuild
 a_exists "$H/.cursor/extensions/e/node_modules" "HOME/.cursor 底下的 node_modules 保留"
 a_exists "$H/work/p/node_modules" "HOME/work 底下的 node_modules 保留（整個 HOME 被拒絕）"
 a_nolog "$OUTFILE" "extensions" "輸出沒提到 extensions"

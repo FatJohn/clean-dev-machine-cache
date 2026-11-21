@@ -15,10 +15,14 @@ run_script "$H" --apply --include-caches > "$OUTFILE" 2>&1
 a_eq "$?" 0 "exit 0"
 a_exists "$SB/outside/dd/p1" "symlink 指到的 DerivedData 內容保留"
 a_exists "$SB/outside/ds/old" "symlink 指到的 DeviceSupport 舊項目保留"
-if real_busy xcode; then
-    skip "真實機器上 Xcode 在跑，DerivedData／DeviceSupport 在 symlink 檢查前就被跳過"
+if any_real_busy xcode xcodebuild; then
+    skip "真實機器上 Xcode／xcodebuild 在跑，DerivedData 在 symlink 檢查前就被跳過"
 else
     a_log "$OUTFILE" "是 symlink，為安全起見略過：Xcode DerivedData" "log：DerivedData symlink 略過"
+fi
+if real_busy xcode; then
+    skip "真實機器上 Xcode 在跑，DeviceSupport 在 symlink 檢查前就被跳過"
+else
     a_log "$OUTFILE" "是 symlink，為安全起見略過：iOS DeviceSupport" "log：DeviceSupport symlink 略過（clean_older）"
 fi
 

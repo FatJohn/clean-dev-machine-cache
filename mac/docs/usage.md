@@ -53,9 +53,9 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
 |---|---|---|---|
 | Chrome code_sign_clone | `$CODE_SIGN_CLONE_BASE/com.google.Chrome.code_sign_clone` | 清空內容 | Google Chrome |
 | Edge code_sign_clone | `$CODE_SIGN_CLONE_BASE/com.microsoft.edgemac.code_sign_clone` | 清空內容 | Microsoft Edge |
-| Xcode DerivedData | `~/Library/Developer/Xcode/DerivedData` | 清空內容 | Xcode |
-| Xcode Products | `~/Library/Developer/Xcode/Products` | 整個刪除 | Xcode |
-| Xcode 應用程式快取 | `~/Library/Caches/com.apple.dt.Xcode` | 整個刪除 | Xcode |
+| Xcode DerivedData | `~/Library/Developer/Xcode/DerivedData` | 清空內容 | Xcode、xcodebuild |
+| Xcode Products | `~/Library/Developer/Xcode/Products` | 整個刪除 | Xcode、xcodebuild |
+| Xcode 應用程式快取 | `~/Library/Caches/com.apple.dt.Xcode` | 整個刪除 | Xcode、xcodebuild |
 | 失效的模擬器 | — | `xcrun simctl delete unavailable` | Xcode、Simulator |
 | CoreSimulator logs | `~/Library/Logs/CoreSimulator` | 清空內容 | Xcode、Simulator |
 | Codex CLI 舊版本 | `~/.codex/packages/standalone/releases/*` | 保留 `current` 指到的版本與最新的穩定版（完全沒有穩定版時保留最新的預發行版）；無法辨識的名稱一律保留，其餘刪除 | — |
@@ -66,7 +66,7 @@ dry-run 的總量是估計值：B 級用官方指令清的項目以目前目錄�
 | XCTestDevices | `~/Library/Developer/XCTestDevices` | 清空內容（平行測試複製出來的模擬器） | Xcode、Simulator、開機中的模擬器、xcodebuild |
 | Interface Builder 快取 | `~/Library/Developer/Xcode/UserData/IB Support` | 整個刪除 | Xcode |
 | 開發工具 log | `~/Library/Logs/JetBrains`、`~/.config/gcloud/logs`、`~/.azure/logs` | 清空內容（只動 log 目錄，設定與憑證不碰） | — |
-| Android 模擬器（AVD） | `~/.android/avd/*.avd` | **只報告**每台的大小，不清 | — |
+| Android 模擬器（AVD） | `~/.android/avd/*.avd` | **只報告**每台的大小，不清；有 `--include-simulators` 時改由 D 級清空，這裡不報告 | — |
 | Claude Code 對話紀錄 | `~/.claude/projects` | **只報告**大小，不清 | — |
 | Codex 對話紀錄 | `~/.codex/sessions` | **只報告**大小，不清 | — |
 
@@ -104,9 +104,9 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 | Bun | 刪除 `~/.bun/install/cache` | 同左 | — |
 | Go | `go clean -cache`、`go clean -modcache` | `go env GOCACHE`、`go env GOMODCACHE` | — |
 | .NET | `dotnet nuget locals all --clear` | `~/.nuget/packages` | — |
-| Gradle | 刪除 `~/.gradle/caches`、`daemon`、`.tmp`（保留 `wrapper` 與 `gradle.properties`） | 同左 | Android Studio、Gradle daemon、Android emulator |
+| Gradle | 刪除 `~/.gradle/caches`、`daemon`、`.tmp`（保留 `wrapper` 與 `gradle.properties`） | 同左 | Android Studio、IntelliJ IDEA、Gradle daemon、Kotlin compile daemon、Android emulator |
 | CocoaPods | 刪除 `~/Library/Caches/CocoaPods` | 同左 | — |
-| SwiftPM | 刪除 `~/Library/Caches/org.swift.swiftpm` | 同左 | Xcode |
+| SwiftPM | 刪除 `~/Library/Caches/org.swift.swiftpm` | 同左 | Xcode、xcodebuild |
 | Dart analysis server | 刪除 `~/.dartServer` | 同左 | — |
 | pub cache | 有 `dart` 且沒設 `DISABLE_TOOL_COMMANDS=true`：`PUB_CACHE=<路徑> dart pub cache gc --force`，再刪 `.tmp`、`_temp`。否則刪除 `hosted`、`hosted-hashes`、`git`、`.tmp`、`_temp`。路徑是 `$PUB_CACHE`（預設 `~/.pub-cache`），兩種做法都保留 `bin` 與 `global_packages`；要先通過驗證 | 整個 pub cache 目錄（gc）；各路徑（路徑清理） | flutter 指令、Dart analysis server |
 | Flutter SDK artifacts | 刪除 `$FLUTTER_ROOT/bin/cache`；要先通過驗證 | 同左 | flutter 指令、Dart analysis server |
@@ -116,14 +116,13 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
 | Edge 快取 | 清空 `~/Library/Caches/Microsoft Edge` | 同左 | Microsoft Edge |
 | Cursor 快取 | 清空 `~/Library/Caches/Cursor` | 同左 | Cursor |
 | Kotlin/Native 舊版本 | `~/.konan/kotlin-native-prebuilt-*` 每組只保留版本最新的一個，其餘刪除（見表下說明） | 各版本目錄 | Android Studio、Gradle daemon、Kotlin compile daemon、IntelliJ IDEA |
-| Android Studio 舊版本快取 | `~/Library/Caches/Google/AndroidStudio*` 每組只保留版本最新的一個，其餘刪除 | 各版本目錄 | Android Studio |
 | Kotlin LSP workspace 索引 | 刪除 `~/Library/Caches/JetBrains/IntelliJServer/workspaces` 下整個目錄超過 14 天沒有更新的項目 | 同左 | Kotlin LSP |
 | Robolectric android-all | 刪除 `~/.m2/repository/org/robolectric` 下的 `android-all` 與 `android-all-instrumented`（見表下說明） | 各 artifact 目錄 | Android Studio、Gradle daemon、IntelliJ IDEA |
 | Playwright | **只報告**，不清 | `~/Library/Caches/ms-playwright*` | — |
 | 其他開發工具快取 | 刪除下方清單的路徑（都在 `~` 底下） | 同左 | — |
-| Android SDK／build 快取 | 刪除 `~/.android/cache`、`~/.android/build-cache` | 同左 | Android Studio、Gradle daemon、Android emulator |
-| Android Studio 快取 | `~/Library/Caches/Google/AndroidStudio*` 中留下來的每一個，清空其中的 `caches`、`index`、`tmp`（舊版本已由上面的「Android Studio 舊版本快取」整個刪除；`LocalHistory` 是 IDE 的本機修改歷史，無法重建，不碰） | 各版本目錄 | Android Studio |
-| SwiftPM 全域快取 | 刪除 `~/.cache/swift-package-manager` | 同左 | Xcode |
+| Android SDK／build 快取 | 刪除 `~/.android/cache`、`~/.android/build-cache` | 同左 | Android Studio、IntelliJ IDEA、Gradle daemon、Kotlin compile daemon、Android emulator |
+| Android Studio 快取 | `~/Library/Caches/Google/AndroidStudio*` 的每一個版本（含舊版本），清空其中的 `caches`、`index`、`tmp`；不整個刪舊版本目錄，因為同層的 `LocalHistory` 是 IDE 的本機修改歷史（含未 commit 的改動），無法重建 | 各版本目錄 | Android Studio |
+| SwiftPM 全域快取 | 刪除 `~/.cache/swift-package-manager` | 同左 | Xcode、xcodebuild |
 | macOS／tvOS／visionOS／xrOS DeviceSupport | 刪除 `~/Library/Developer/Xcode/<平台> DeviceSupport` 下超過 90 天的項目 | 同左 | Xcode |
 
 - **其他開發工具快取**：從 [Mole](https://github.com/tw93/mole) 的 `lib/clean/dev.sh` 挑出開發機用得到、
@@ -169,9 +168,9 @@ npm、pnpm、Go、.NET 用官方指令；pub cache 有 `dart` 時用官方的 `d
   不論 SDK 位置從哪來，都要有 `bin/flutter` 與 `bin/internal`、而且不是 `/`、`~` 或 `~` 的上層目錄，
   才算 Flutter SDK；例如 `FLUTTER_ROOT=$HOME` 時 `~/bin/cache` 不會被刪。明確設定的 `FLUTTER_ROOT`
   驗證不過會記 WARN；自動偵測的候選驗證不過就換下一個。
-- **Kotlin/Native、Android Studio 快取**的「每組只保留最新版」：目錄名稱結尾要是純數字版本（`1.9.23`、
-  `2026.1.1`），版本號前面的部分是組名，所以 `kotlin-native-prebuilt-macos-aarch64-` 與 `-x86_64-`、
-  `AndroidStudio` 與 `AndroidStudioPreview` 各自保留一個。組內以 `sort -V` 比較（`1.10.1` 比 `1.9.23` 新）。
+- **Kotlin/Native** 的「每組只保留最新版」：目錄名稱結尾要是純數字版本（`1.9.23`、
+  `2.0.0`），版本號前面的部分是組名，所以 `kotlin-native-prebuilt-macos-aarch64-` 與 `-x86_64-`
+  各自保留一個。組內以 `sort -V` 比較（`1.10.1` 比 `1.9.23` 新）。
   結尾不是純數字版本的名稱（`2.1.0-RC`、`.konan/dependencies`），以及組名裡還有 `N.N` 的預發行版
   （`2.1.0-RC1`、`2.0.20-Beta2`、`2.2.0-dev-1234`，結尾的數字不是版本）一律保留並記「無法辨識版本」。
   專案若釘在被刪的舊版 Kotlin，下次 build 會重新下載該版（每版約 1 GB）。
@@ -202,7 +201,7 @@ DIR 是 `/`、`~`、`~` 的上層目錄（例如 `/Users`），或在 `~/Library
 
 | 找到 | 清什麼 | 什麼時候清 |
 |---|---|---|
-| `pubspec.yaml` | 同層的 `build/` 與 `.dart_tool` | 分開判斷：`build/` 的 mtime 超過 `--stale-days` 天；`.dart_tool` 本身的 mtime 超過，且裡面沒有任何項目在 `--stale-days` 天內更新（pub get、flutter run 只改深層檔案，目錄本身的 mtime 不會跟著變） |
+| `pubspec.yaml` | 同層的 `build/` 與 `.dart_tool` | 分開判斷，條件相同：目錄本身的 mtime 超過 `--stale-days` 天，且裡面沒有任何項目在 `--stale-days` 天內更新（pub get、flutter run、重新 build 只改深層檔案，目錄本身的 mtime 不會跟著變） |
 | `package.json` | 同層的 `node_modules` | `node_modules/.package-lock.json`（沒有就看 `node_modules` 本身）的 mtime 超過 `--stale-days` 天 |
 
 報告逐項列出路徑和大小。清掉的代價是下次打開那個專案要重新 `flutter build`／`npm install`；
@@ -262,14 +261,14 @@ dry-run 也照樣判斷，會印出「會跳過 X：Y 正在執行」並附上�
 | Xcode | `pgrep -x Xcode` | DerivedData、Products、Xcode 應用程式快取、simctl、CoreSimulator logs、CoreSimulator 快取、XCTestDevices、Interface Builder 快取、SwiftPM（兩個位置）、各平台 DeviceSupport、D 級的 iOS 模擬器與 runtime |
 | Simulator | `pgrep -x Simulator` | simctl、CoreSimulator logs、CoreSimulator 快取、XCTestDevices、D 級的 iOS 模擬器與 runtime |
 | 開機中的模擬器 | `pgrep -x launchd_sim`（每台開機中的模擬器各有一個，含 headless 與平行測試的 clone） | CoreSimulator 快取、XCTestDevices、D 級的 iOS 模擬器與 runtime |
-| xcodebuild | `pgrep -x xcodebuild` | CoreSimulator 快取、XCTestDevices、D 級的 iOS 模擬器與 runtime |
+| xcodebuild | `pgrep -x xcodebuild`（Xcode.app 沒開時，終端機的 `flutter build ipa`、`xcodebuild archive` 也會有） | DerivedData、Products、Xcode 應用程式快取、CoreSimulator 快取、XCTestDevices、SwiftPM（兩個位置）、D 級的 iOS 模擬器與 runtime |
 | Google Chrome | `pgrep -x "Google Chrome"` | Chrome code_sign_clone、Chrome 快取 |
 | Microsoft Edge | `pgrep -x "Microsoft Edge"` | Edge code_sign_clone、Edge 快取 |
 | Cursor | `pgrep -x Cursor` | Cursor 快取 |
-| Android Studio | `pgrep -f 'Android Studio[^/]*\.app'`（含 Preview） | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Android Studio 舊版本快取、Robolectric android-all、Android SDK／build 快取、Android Studio 快取、D 級的 AVD |
+| Android Studio | `pgrep -f 'Android Studio[^/]*\.app'`（含 Preview） | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Robolectric android-all、Android SDK／build 快取、Android Studio 快取、D 級的 AVD |
 | Gradle daemon | `pgrep -f GradleDaemon` | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Robolectric android-all、Android SDK／build 快取 |
-| Kotlin compile daemon | `pgrep -f KotlinCompileDaemon` | Kotlin/Native 舊版本 |
-| IntelliJ IDEA | `pgrep -f 'IntelliJ IDEA[^/]*\.app'` | Kotlin/Native 舊版本、Robolectric android-all |
+| Kotlin compile daemon | `pgrep -f KotlinCompileDaemon` | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Android SDK／build 快取 |
+| IntelliJ IDEA | `pgrep -f 'IntelliJ IDEA[^/]*\.app'` | Gradle caches／daemon／.tmp、Kotlin/Native 舊版本、Robolectric android-all、Android SDK／build 快取 |
 | Android emulator | `pgrep -f qemu-system` | Gradle caches／daemon／.tmp、Android SDK／build 快取、D 級的 AVD |
 | flutter 指令 | `pgrep -f flutter_tools` | pub cache、Flutter SDK artifacts |
 | Dart analysis server | `pgrep -f 'dart.*(analysis_server\|language-server)'` | pub cache、Flutter SDK artifacts |
