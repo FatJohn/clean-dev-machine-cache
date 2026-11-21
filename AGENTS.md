@@ -24,6 +24,10 @@
   不改找別的路徑。
 - `--projects`（`scan_project_dir`）拒絕 `/`、HOME、HOME 的上層與 `~/Library` 底下，掃描時 prune 所有隱藏目錄。
 - 要清的路徑本身是 symlink 就略過，不跟進去、也不刪 symlink 本身（`clean`／`clean_older` 的 `-L` 檢查）。
+- 中間層 symlink 也略過：`clean`／`clean_older` 經 `symlink_parent` 從起點往下逐層查 `-L`，起點本身不查。
+  起點預設是 HOME（HOME 可以是 symlink）；明確設定或驗證過的根目錄（`PUB_CACHE`、`FLUTTER_ROOT`、`--projects`）
+  由呼叫端傳入當起點。不在起點底下的路徑不查（`/tmp`、`/var` 本身就是 symlink）。新增清理項目時，
+  根目錄來自使用者設定或驗證函式才傳起點，HOME 底下寫死的路徑一律不傳。
 - 擁有者 app 在跑時該項直接跳過（`skip_if_busy`／`owner_running`），不等待、不殺 process。
 - D 級（`--include-simulators`）的 iOS 模擬器與 runtime 只經 `xcrun simctl`，不直接刪 `CoreSimulator/Devices`；
   `simctl list devices` 有 `(Booted)`／`(Booting)`／`(Shutting Down)` 或查詢失敗就整項跳過，不關機。
